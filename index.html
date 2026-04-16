@@ -4,15 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ระบบลงตัวเลขหวย - Professional Management</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & Babel -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- PDF Generation Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
@@ -68,7 +64,6 @@
             const [pdfExportData, setPdfExportData] = useState({ chunks: [], currentIndex: -1 });
             const [pdfInstance, setPdfInstance] = useState(null);
             
-            // URL ของ Google Apps Script Web App
             const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
             const typeList = [
@@ -106,13 +101,14 @@
                 e.preventDefault();
                 if (!number || !price) { showAlert('กรุณากรอกตัวเลขและราคา'); return; }
 
+                // Check blocked numbers (Smart Block)
                 const inputPerms = getPermutations(number);
                 if (inputPerms.find(p => blockedNumbers.includes(p))) {
                     showAlert(`เลขชุดนี้ติดเลขปิด: ${number}`, 'error');
                     return;
                 }
 
-                // Parsing Price: 110*22*5
+                // Multi-Price Logic: 110*22*5 or 100*10
                 const priceParts = price.toLowerCase().split(/[x*]/);
                 const mainPrice = parseFloat(priceParts[0]);
                 let subPrice = mainPrice; 
@@ -173,15 +169,16 @@
                         cache: 'no-cache',
                         body: JSON.stringify({ entries: entries })
                     });
-                    showAlert('บันทึกลง Google Sheets สำเร็จ!', 'success');
+                    showAlert('บันทึกข้อมูลเรียบร้อยแล้ว!', 'success');
                     setEntries([]); 
                 } catch (error) {
-                    showAlert('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+                    showAlert('การเชื่อมต่อผิดพลาด');
                 } finally {
                     setIsSaving(false);
                 }
             };
 
+            // PDF Pagination Logic
             const chunkArray = (array, size) => {
                 const chunks = [];
                 for (let i = 0; i < array.length; i += size) {
@@ -193,7 +190,7 @@
             const startExportPDF = () => {
                 if (entries.length === 0) return;
                 setIsGeneratingPDF(true);
-                const chunks = chunkArray(entries, 20); // 20 รายการต่อหน้า
+                const chunks = chunkArray(entries, 20); 
                 setPdfExportData({ chunks, currentIndex: 0 });
             };
 
@@ -208,7 +205,7 @@
                 const element = document.getElementById('pdf-render-zone');
                 
                 try {
-                    await new Promise(r => setTimeout(r, 1000)); // รอเรนเดอร์
+                    await new Promise(r => setTimeout(r, 1200)); 
 
                     const canvas = await html2canvas(element, { 
                         scale: 3, 
@@ -235,13 +232,12 @@
                         setPdfInstance(currentPdf);
                         setPdfExportData(prev => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
                     } else {
-                        currentPdf.save(`Lotto-Report-${new Date().getTime()}.pdf`);
-                        showAlert('ดาวน์โหลดรายงานสำเร็จ', 'success');
+                        currentPdf.save(`Report-${new Date().getTime()}.pdf`);
+                        showAlert('ดาวน์โหลด PDF สำเร็จ', 'success');
                         resetPdfExport();
                     }
                 } catch (err) {
-                    console.error(err);
-                    showAlert('เกิดข้อผิดพลาดในการสร้าง PDF');
+                    showAlert('สร้าง PDF ไม่สำเร็จ');
                     resetPdfExport();
                 }
             };
@@ -261,7 +257,7 @@
                         <header className="bg-indigo-700 text-white p-5 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold flex items-center gap-2"><Icon name="target" /> ระบบลงหวยอัจฉริยะ</h1>
-                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Matrix Expansion & Professional PDF</p>
+                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Matrix Expansion & Page-Fitted PDF</p>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-md scale-105' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
@@ -287,11 +283,11 @@
                                         </div>
                                         <div className="flex gap-4">
                                             <div className="w-1/2">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ตัวเลข</label>
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">ตัวเลข</label>
                                                 <input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="000" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:border-indigo-500 text-center" />
                                             </div>
                                             <div className="w-1/2">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ราคา (110*22)</label>
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">ราคา (110*22*5)</label>
                                                 <input type="text" value={price} onChange={e => setPrice(e.target.value)} placeholder="0" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:border-indigo-500 text-center font-bold text-indigo-700" />
                                             </div>
                                         </div>
@@ -299,7 +295,7 @@
                                     </form>
 
                                     <div className="bg-rose-50 p-4 rounded-xl border-2 border-rose-100 shadow-sm">
-                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-2"><Icon name="lock" size={16} /><span className="text-xs uppercase">เลขปิดงวดนี้:</span></div>
+                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-2 font-black uppercase text-xs"><Icon name="lock" size={16} /> เลขปิดงวดนี้:</div>
                                         <div className="flex flex-wrap gap-2">
                                             {blockedNumbers.length > 0 ? (
                                                 blockedNumbers.map(n => <span key={n} className="bg-white px-3 py-1 rounded-lg border border-rose-200 text-xs font-mono font-black text-rose-600 shadow-sm">{n}</span>)
@@ -311,7 +307,7 @@
                                 </div>
 
                                 <div className="p-0 bg-slate-50/30 flex flex-col h-[600px] md:h-auto">
-                                    <div className="p-6 flex justify-between items-center"><h3 className="font-black text-slate-800 flex items-center gap-2"><Icon name="shopping-cart" size={18} className="text-indigo-500" /> ตะกร้า ({entries.length})</h3></div>
+                                    <div className="p-6 flex justify-between items-center border-b border-slate-100"><h3 className="font-black text-slate-800 flex items-center gap-2"><Icon name="shopping-cart" size={18} className="text-indigo-500" /> ตะกร้า ({entries.length})</h3></div>
                                     <div className="flex-grow overflow-y-auto space-y-2 p-6 custom-scrollbar">
                                         {entries.length === 0 ? (
                                             <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4 py-20 opacity-30">
@@ -320,7 +316,7 @@
                                             </div>
                                         ) : (
                                             entries.map(item => (
-                                                <div key={item.id} className={`bg-white p-4 rounded-xl border-2 flex justify-between items-center shadow-sm transition-all ${item.isPrimary ? 'border-indigo-200 ring-2 ring-indigo-50 scale-105' : 'border-slate-50 opacity-80'}`}>
+                                                <div key={item.id} className={`bg-white p-4 rounded-xl border-2 flex justify-between items-center shadow-sm transition-all ${item.isPrimary ? 'border-indigo-200 ring-2 ring-indigo-50 scale-[1.02]' : 'border-slate-50 opacity-80'}`}>
                                                     <div>
                                                         <div className={`font-mono font-black text-2xl ${item.isPrimary ? 'text-indigo-700' : 'text-slate-600'}`}>{item.number}</div>
                                                         <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{item.typeName} {item.isPrimary && '(หลัก)'}</div>
@@ -346,11 +342,11 @@
                             <div className="p-8 space-y-10 max-w-2xl mx-auto min-h-[500px]">
                                 <h2 className="text-3xl font-black text-slate-800 border-b-4 border-indigo-100 pb-4 flex items-center gap-3"><Icon name="settings-2" className="text-indigo-600" /> ตั้งค่าระบบ</h2>
                                 <div className="space-y-4">
-                                    <label className="text-sm font-black text-slate-500 uppercase tracking-widest block font-bold">Web App URL (Google Sheets)</label>
+                                    <label className="text-sm font-black text-slate-500 uppercase tracking-widest block font-bold">Web App URL (Google Script)</label>
                                     <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all shadow-inner" />
                                 </div>
                                 <div className="space-y-5 pt-6">
-                                    <div className="flex justify-between items-end font-bold"><label className="text-sm font-black text-slate-500 uppercase tracking-widest block">เลขปิดประจำงวด</label><button onClick={() => setBlockedNumbers([])} className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50 transition-all">ล้างทั้งหมด</button></div>
+                                    <div className="flex justify-between items-end font-bold"><label className="text-sm font-black text-slate-500 uppercase tracking-widest block">จัดการเลขปิด</label><button onClick={() => setBlockedNumbers([])} className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50 transition-all">ล้างทั้งหมด</button></div>
                                     <div className="flex gap-3"><input id="new-block-input" type="number" placeholder="กรอกเลขปิด" className="flex-grow p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xl outline-none focus:border-rose-300 shadow-inner" /><button onClick={() => { const v = document.getElementById('new-block-input').value; if(v) setBlockedNumbers([...blockedNumbers, v]); document.getElementById('new-block-input').value = ''; }} className="bg-rose-600 text-white px-8 rounded-2xl font-black transition-all shadow-lg active:scale-95">เพิ่ม</button></div>
                                     <div className="grid grid-cols-4 gap-3">{blockedNumbers.map(n => <div key={n} className="bg-white text-rose-600 p-3 rounded-xl font-black border-2 border-rose-50 flex justify-between items-center shadow-sm"><span>{n}</span><button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))}><Icon name="x-circle" size={14} /></button></div>)}</div>
                                 </div>
@@ -400,7 +396,7 @@
                                     <div style={{ borderBottom: '6px solid #4338ca', paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                         <div>
                                             <h1 style={{ fontSize: '38px', fontWeight: '900', color: '#4338ca', margin: '0' }}>สรุปรายการลงหวย</h1>
-                                            <p style={{ color: '#64748b', fontWeight: 'bold', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px', fontSize: '11px' }}>Professional Management Edition</p>
+                                            <p style={{ color: '#64748b', fontWeight: 'bold', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px', fontSize: '11px' }}>Professional Management System</p>
                                         </div>
                                         <div style={{ textAlign: 'right', color: '#94a3b8', fontSize: '13px', fontWeight: 'bold' }}>
                                             หน้า {pdfExportData.currentIndex + 1} / {pdfExportData.chunks.length} | {new Date().toLocaleString('th-TH')}
@@ -422,7 +418,7 @@
                                                 </tr>
                                             ))}
                                             
-                                            {/* บังคับแสดงยอดสรุปท้ายตารางในหน้าสุดท้ายเสมอ */}
+                                            {/* บังคับแสดงยอดสรุปท้ายตารางเฉพาะในหน้าสุดท้ายเสมอ */}
                                             {pdfExportData.currentIndex === pdfExportData.chunks.length - 1 && (
                                                 <tr className="pdf-total-row">
                                                     <td colSpan="3" style={{ textAlign: 'right', padding: '30px 20px', fontSize: '22px', color: '#312e81', borderTop: '2px solid #4338ca' }}>ยอดรวมสุทธิทั้งสิ้น</td>
@@ -438,7 +434,7 @@
                             )}
                         </div>
 
-                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.5em] border-t-2 border-slate-100">Smart Data Matrix Sync &bull; Professional Edition &bull; 2026</footer>
+                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.5em] border-t-2 border-slate-100">Smart Data Sync &bull; Professional Edition &bull; 2026</footer>
                     </div>
                 </div>
             );
