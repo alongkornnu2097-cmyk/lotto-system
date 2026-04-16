@@ -38,7 +38,7 @@
 
         const App = () => {
             const [entries, setEntries] = useState([]);
-            const [blockedNumbers, setBlockedNumbers] = useState(['254', '12']);
+            const [blockedNumbers, setBlockedNumbers] = useState([]); // เริ่มต้นด้วยค่าว่างเพื่อให้กรอกใหม่ทุกงวด
             const [number, setNumber] = useState('');
             const [price, setPrice] = useState('');
             const [type, setType] = useState('3-direct');
@@ -92,18 +92,14 @@
                 const hitBlock = inputPerms.find(p => blockedNumbers.includes(p));
 
                 if (hitBlock) {
-                    showAlert(`เลขชุดนี้ติดตัวปิด: ${hitBlock}`, 'error');
+                    showAlert(`เลขชุดนี้ติดตัวปิดของงวดนี้: ${hitBlock}`, 'error');
                     return;
                 }
 
                 let newItems = [];
-                
-                // Parsing Multi-Price (e.g., 110x22)
                 const priceParts = price.toLowerCase().split(/[x*]/);
                 const mainPrice = parseFloat(priceParts[0]);
                 const subPrice = priceParts.length > 1 ? parseFloat(priceParts[1]) : mainPrice;
-
-                // Check if current type is a "permute" type
                 const isPermute = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
 
                 if (isPermute) {
@@ -157,10 +153,16 @@
 
             const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
 
+            const clearBlockedNumbers = () => {
+                if (window.confirm('คุณต้องการล้างรายการเลขปิดทั้งหมดของงวดนี้ใช่หรือไม่?')) {
+                    setBlockedNumbers([]);
+                    showAlert('ล้างรายการเลขปิดแล้ว', 'success');
+                }
+            };
+
             return (
                 <div className="min-h-screen p-2 md:p-8">
                     <div className="max-w-4xl mx-auto shadow-2xl rounded-2xl overflow-hidden bg-white">
-                        {/* App Header */}
                         <header className="bg-indigo-700 text-white p-5 md:p-6 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
@@ -174,7 +176,6 @@
                             </div>
                         </header>
 
-                        {/* Notification Toast */}
                         {notification && (
                             <div className={`fixed top-4 right-4 z-50 p-4 rounded-2xl shadow-2xl text-white font-bold transition-all transform animate-bounce flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
                                 <Icon name={notification.type === 'error' ? 'shield-alert' : 'check-circle-2'} size={24} />
@@ -184,7 +185,6 @@
 
                         {activeTab === 'entry' ? (
                             <div className="grid md:grid-cols-2 divide-x divide-slate-100 min-h-[500px]">
-                                {/* Form Side */}
                                 <div className="p-5 md:p-8 space-y-6">
                                     <form onSubmit={handleAddEntry} className="space-y-5">
                                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -234,19 +234,18 @@
                                     <div className="bg-rose-50 p-5 rounded-2xl border-2 border-rose-100 shadow-sm">
                                         <div className="flex items-center gap-2 text-rose-800 font-bold mb-3">
                                             <Icon name="lock" size={18} />
-                                            <span className="text-xs uppercase tracking-tight">รายการเลขปิด (ล็อกอัตโนมัติ):</span>
+                                            <span className="text-xs uppercase tracking-tight">รายการเลขปิดของงวดนี้:</span>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                             {blockedNumbers.length > 0 ? (
                                                 blockedNumbers.map(n => <span key={n} className="bg-white px-3 py-1 rounded-lg border border-rose-200 text-xs font-mono font-black text-rose-600 shadow-sm">{n}</span>)
                                             ) : (
-                                                <span className="text-xs text-rose-400 italic">ไม่มีเลขปิดงวดนี้</span>
+                                                <span className="text-xs text-rose-400 italic">ยังไม่มีการตั้งเลขปิดสำหรับงวดนี้</span>
                                             )}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* List Side */}
                                 <div className="p-0 bg-slate-50/30 flex flex-col h-[600px] md:h-auto">
                                     <div className="p-6 pb-2 flex justify-between items-center">
                                         <h3 className="font-black text-slate-800 flex items-center gap-2">
@@ -254,7 +253,7 @@
                                             สรุปยอด ({entries.length})
                                         </h3>
                                         {entries.length > 0 && (
-                                            <button onClick={() => setEntries([])} className="text-[10px] text-rose-500 font-bold hover:bg-rose-50 px-3 py-1 rounded-full transition-colors uppercase tracking-widest border border-rose-100">Clear</button>
+                                            <button onClick={() => setEntries([])} className="text-[10px] text-rose-500 font-bold hover:bg-rose-50 px-3 py-1 rounded-full transition-colors uppercase tracking-widest border border-rose-100">ล้างรายการ</button>
                                         )}
                                     </div>
 
@@ -272,7 +271,7 @@
                                                             {item.number}
                                                         </div>
                                                         <div className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-1">
-                                                            {item.type} {item.isPrimary && ['3 ตัวกลับ', '2 ตัวบนกลับ', '2 ตัวล่างกลับ'].includes(item.type) && '(ตัวหลัก)'}
+                                                            {item.type} {item.isPrimary && ['3 ตัวกลับ', '2 ตัวบนกลับ', '2 ตัวล่างกลับ'].includes(item.type) && '(หลัก)'}
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-5">
@@ -299,7 +298,7 @@
                                             className={`w-full py-5 rounded-2xl text-white font-black flex justify-center items-center gap-3 transition-all shadow-2xl ${isSaving || entries.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100 active:scale-95'}`}
                                         >
                                             {isSaving ? (
-                                                <><Icon name="loader" className="animate-spin" /> กำลังซิงค์ข้อมูล...</>
+                                                <><Icon name="loader" className="animate-spin" /> กำลังบันทึก...</>
                                             ) : (
                                                 <><Icon name="send" size={24} /> บันทึกลง Google Sheet</>
                                             )}
@@ -308,7 +307,6 @@
                                 </div>
                             </div>
                         ) : (
-                            /* Settings Tab */
                             <div className="p-8 space-y-10 max-w-2xl mx-auto min-h-[550px]">
                                 <h2 className="text-3xl font-black text-slate-800 border-b-4 border-indigo-100 pb-4 flex items-center gap-3">
                                     <Icon name="settings-2" className="text-indigo-600" size={32} />
@@ -318,18 +316,26 @@
                                 <div className="space-y-4">
                                     <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
                                         <Icon name="link-2" size={20} className="text-emerald-500" />
-                                        Google Sheets Web App URL
+                                        URL ของ Google Sheets
                                     </label>
                                     <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" />
                                 </div>
 
                                 <div className="space-y-5 pt-6">
-                                    <div>
-                                        <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                                            <Icon name="shield-off" size={20} className="text-rose-500" />
-                                            ระบบเลขปิดอัจฉริยะ
-                                        </label>
-                                        <p className="text-[10px] text-slate-400 mt-2 font-bold">* ใส่เพียงเลขเดียว ระบบจะล็อกชุดสลับ (Permutations) ทั้งหมดให้อัตโนมัติ</p>
+                                    <div className="flex justify-between items-end">
+                                        <div>
+                                            <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+                                                <Icon name="shield-off" size={20} className="text-rose-500" />
+                                                จัดการเลขปิด (ประจำงวด)
+                                            </label>
+                                            <p className="text-[10px] text-slate-400 mt-2 font-bold">* ใส่เพียงเลขเดียว ระบบจะล็อกชุดสลับให้อัตโนมัติ</p>
+                                        </div>
+                                        <button 
+                                            onClick={clearBlockedNumbers}
+                                            className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50 transition-colors uppercase tracking-widest"
+                                        >
+                                            ล้างเลขปิดทั้งหมด
+                                        </button>
                                     </div>
                                     <div className="flex gap-3">
                                         <input id="new-block-input" type="number" placeholder="กรอกเลขที่ต้องการปิด" className="flex-grow p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-rose-500/10 font-mono text-xl" />
