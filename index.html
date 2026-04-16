@@ -12,6 +12,10 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- PDF Generation Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&family=JetBrains+Mono:wght@700&display=swap');
         body { font-family: 'Sarabun', sans-serif; }
@@ -19,6 +23,17 @@
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        
+        /* สไตล์สำหรับพื้นที่พิมพ์ PDF (ซ่อนจากหน้าจอปกติ) */
+        #pdf-report-template { 
+            position: absolute; 
+            left: -9999px; 
+            top: -9999px; 
+            width: 800px; 
+            padding: 40px; 
+            background: white; 
+            color: black; 
+        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -28,23 +43,21 @@
         const { useState, useMemo, useEffect } = React;
         
         const Icon = ({ name, size = 24, className = "" }) => {
-            useEffect(() => {
-                if (window.lucide) {
-                    window.lucide.createIcons();
-                }
-            }, [name, size, className]);
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name, size, className]);
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         const App = () => {
             const [entries, setEntries] = useState([]);
-            const [blockedNumbers, setBlockedNumbers] = useState([]); // เริ่มต้นด้วยค่าว่างเพื่อให้กรอกใหม่ทุกงวด
+            const [blockedNumbers, setBlockedNumbers] = useState([]); 
             const [number, setNumber] = useState('');
             const [price, setPrice] = useState('');
             const [type, setType] = useState('3-direct');
             const [notification, setNotification] = useState(null);
             const [activeTab, setActiveTab] = useState('entry');
             const [isSaving, setIsSaving] = useState(false);
+            const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+            const [showPreview, setShowPreview] = useState(false); // State สำหรับเปิดหน้าพรีวิว
             
             const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
@@ -63,15 +76,13 @@
             ];
 
             const getPermutations = (str) => {
-                if (!str || typeof str !== 'string') return [];
+                if (!str) return [];
                 if (str.length <= 1) return [str];
                 const perms = [];
                 for (let i = 0; i < str.length; i++) {
                     const char = str[i];
                     const remainingChars = str.slice(0, i) + str.slice(i + 1);
-                    for (const p of getPermutations(remainingChars)) {
-                        perms.push(char + p);
-                    }
+                    for (const p of getPermutations(remainingChars)) perms.push(char + p);
                 }
                 return [...new Set(perms)]; 
             };
@@ -83,34 +94,43 @@
 
             const handleAddEntry = (e) => {
                 e.preventDefault();
-                if (!number || !price) {
-                    showAlert('กรุณากรอกตัวเลขและราคา');
-                    return;
-                }
+                if (!number || !price) { showAlert('กรุณากรอกตัวเลขและราคา'); return; }
 
                 const inputPerms = getPermutations(number);
                 const hitBlock = inputPerms.find(p => blockedNumbers.includes(p));
-
                 if (hitBlock) {
-                    showAlert(`เลขชุดนี้ติดตัวปิดของงวดนี้: ${hitBlock}`, 'error');
+                    showAlert(`เลขชุดนี้ติดเลขปิดงวดนี้: ${hitBlock}`, 'error');
                     return;
                 }
 
-                let newItems = [];
                 const priceParts = price.toLowerCase().split(/[x*]/);
                 const mainPrice = parseFloat(priceParts[0]);
-                const subPrice = priceParts.length > 1 ? parseFloat(priceParts[1]) : mainPrice;
-                const isPermute = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
+                
+                let subPrice = mainPrice; 
+                if (priceParts.length > 1) {
+                    const secondPart = parseFloat(priceParts[1]);
+                    const permsCount = getPermutations(number).length;
+                    if (secondPart === permsCount && priceParts.length === 2) {
+                        subPrice = mainPrice;
+                    } else {
+                        subPrice = secondPart;
+                    }
+                }
 
-                if (isPermute) {
+                let newItems = [];
+                const isPermuteType = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
+
+                if (isPermuteType) {
                     const perms = getPermutations(number);
                     const selectedType = typeList.find(t => t.id === type);
-                    newItems = perms.map((p) => {
+                    newItems = perms.map(p => {
                         const itemPrice = (p === number) ? mainPrice : subPrice;
                         return {
                             id: Math.random().toString(36).substr(2, 9),
                             number: p,
-                            type: selectedType.label,
+                            typeId: type,
+                            typeName: selectedType.label,
+                            displayValue: `${p}=${itemPrice}`, 
                             price: itemPrice,
                             isPrimary: p === number
                         };
@@ -120,7 +140,9 @@
                     newItems = [{
                         id: Math.random().toString(36).substr(2, 9),
                         number,
-                        type: selectedType ? selectedType.label : 'ทั่วไป',
+                        typeId: type,
+                        typeName: selectedType ? selectedType.label : 'ทั่วไป',
+                        displayValue: `${number}=${mainPrice}`,
                         price: mainPrice,
                         isPrimary: true
                     }];
@@ -129,7 +151,7 @@
                 setEntries([...entries, ...newItems]);
                 setNumber('');
                 setPrice('');
-                showAlert('เพิ่มรายการสำเร็จ', 'success');
+                showAlert(`เพิ่ม ${newItems.length} รายการแล้ว`, 'success');
             };
 
             const saveToGoogleSheets = async () => {
@@ -151,221 +173,260 @@
                 }
             };
 
-            const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
-
-            const clearBlockedNumbers = () => {
-                if (window.confirm('คุณต้องการล้างรายการเลขปิดทั้งหมดของงวดนี้ใช่หรือไม่?')) {
-                    setBlockedNumbers([]);
-                    showAlert('ล้างรายการเลขปิดแล้ว', 'success');
+            const exportPDF = async () => {
+                if (entries.length === 0) return;
+                setIsGeneratingPDF(true);
+                const element = document.getElementById('pdf-report-template');
+                try {
+                    const canvas = await html2canvas(element, { scale: 2 });
+                    const imgData = canvas.toDataURL('image/png');
+                    const pdf = new jspdf.jsPDF();
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                    pdf.save(`Lotto-Report-${new Date().getTime()}.pdf`);
+                    showAlert('สร้างไฟล์ PDF สำเร็จ', 'success');
+                    setShowPreview(false); // ปิดพรีวิวหลังโหลดเสร็จ
+                } catch (err) { 
+                    showAlert('เกิดข้อผิดพลาดในการสร้าง PDF'); 
+                } finally { 
+                    setIsGeneratingPDF(false); 
                 }
             };
+
+            const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
 
             return (
                 <div className="min-h-screen p-2 md:p-8">
                     <div className="max-w-4xl mx-auto shadow-2xl rounded-2xl overflow-hidden bg-white">
-                        <header className="bg-indigo-700 text-white p-5 md:p-6 flex justify-between items-center">
+                        <header className="bg-indigo-700 text-white p-5 flex justify-between items-center">
                             <div>
-                                <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-                                    <Icon name="target" /> ระบบลงหวยอัจฉริยะ
-                                </h1>
-                                <p className="text-[10px] md:text-xs text-indigo-200 uppercase tracking-widest mt-1">Smart Block & Multi-Price Sync</p>
+                                <h1 className="text-xl font-bold flex items-center gap-2"><Icon name="target" /> ระบบลงหวยอัจฉริยะ</h1>
+                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Matrix Expansion & Multi-Price</p>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-lg' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
-                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-lg' : 'hover:bg-indigo-600'}`}><Icon name="settings" size={20}/></button>
+                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-md' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
+                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-md' : 'hover:bg-indigo-600'}`}><Icon name="settings" size={20}/></button>
                             </div>
                         </header>
 
                         {notification && (
-                            <div className={`fixed top-4 right-4 z-50 p-4 rounded-2xl shadow-2xl text-white font-bold transition-all transform animate-bounce flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
+                            <div className={`fixed top-4 right-4 z-50 p-4 rounded-2xl shadow-2xl text-white font-bold animate-bounce flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
                                 <Icon name={notification.type === 'error' ? 'shield-alert' : 'check-circle-2'} size={24} />
                                 <span>{notification.msg}</span>
                             </div>
                         )}
 
                         {activeTab === 'entry' ? (
-                            <div className="grid md:grid-cols-2 divide-x divide-slate-100 min-h-[500px]">
+                            <div className="grid md:grid-cols-2 divide-x divide-slate-100 min-h-[550px]">
                                 <div className="p-5 md:p-8 space-y-6">
                                     <form onSubmit={handleAddEntry} className="space-y-5">
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-3 gap-2">
                                             {typeList.map(t => (
-                                                <button 
-                                                    key={t.id} 
-                                                    type="button" 
-                                                    onClick={() => { setType(t.id); setNumber(''); }} 
-                                                    className={`p-2 text-[10px] md:text-[11px] rounded-xl border-2 transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-indigo-200'}`}
-                                                >
-                                                    {t.label}
-                                                </button>
+                                                <button key={t.id} type="button" onClick={() => { setType(t.id); setNumber(''); }} className={`p-2 text-[10px] rounded-xl border-2 transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-indigo-200'}`}>{t.label}</button>
                                             ))}
                                         </div>
-                                        
                                         <div className="flex gap-4">
                                             <div className="w-1/2">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">ตัวเลข</label>
-                                                <input 
-                                                    type="number" 
-                                                    value={number} 
-                                                    onChange={e => setNumber(e.target.value)} 
-                                                    placeholder="เลข" 
-                                                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center" 
-                                                />
+                                                <input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="เลข" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:border-indigo-500 text-center" />
                                             </div>
                                             <div className="w-1/2">
                                                 <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">
-                                                    ราคา {['3-permute', '2-top-permute', '2-bottom-permute'].includes(type) && <span className="text-indigo-500">(เช่น 100x20)</span>}
+                                                    ราคา {['3-permute', '2-top-permute', '2-bottom-permute'].includes(type) && <span className="text-indigo-500 text-[8px]">(เช่น 110*22*5)</span>}
                                                 </label>
-                                                <input 
-                                                    type="text" 
-                                                    value={price} 
-                                                    onChange={e => setPrice(e.target.value)} 
-                                                    placeholder="0" 
-                                                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center font-bold text-indigo-700" 
-                                                />
+                                                <input type="text" value={price} onChange={e => setPrice(e.target.value)} placeholder="0" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:border-indigo-500 text-center font-bold text-indigo-700" />
                                             </div>
                                         </div>
-
-                                        <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all transform active:scale-[0.97] flex items-center justify-center gap-3">
-                                            <Icon name="plus" size={24} />
-                                            เพิ่มรายการลงตาราง
-                                        </button>
+                                        <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-lg flex items-center justify-center gap-3 transition-transform active:scale-95"><Icon name="plus" /> เพิ่มรายการ</button>
                                     </form>
 
-                                    <div className="bg-rose-50 p-5 rounded-2xl border-2 border-rose-100 shadow-sm">
-                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-3">
-                                            <Icon name="lock" size={18} />
-                                            <span className="text-xs uppercase tracking-tight">รายการเลขปิดของงวดนี้:</span>
-                                        </div>
+                                    <div className="bg-rose-50 p-4 rounded-xl border-2 border-rose-100 shadow-sm">
+                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-2"><Icon name="lock" size={16} /><span className="text-xs uppercase">เลขปิดงวดนี้ (ล็อกชุดกลับ):</span></div>
                                         <div className="flex flex-wrap gap-2">
                                             {blockedNumbers.length > 0 ? (
                                                 blockedNumbers.map(n => <span key={n} className="bg-white px-3 py-1 rounded-lg border border-rose-200 text-xs font-mono font-black text-rose-600 shadow-sm">{n}</span>)
                                             ) : (
-                                                <span className="text-xs text-rose-400 italic">ยังไม่มีการตั้งเลขปิดสำหรับงวดนี้</span>
+                                                <span className="text-xs text-rose-400 italic font-bold">ยังไม่ได้ตั้งเลขปิด</span>
                                             )}
                                         </div>
                                     </div>
                                 </div>
 
                                 <div className="p-0 bg-slate-50/30 flex flex-col h-[600px] md:h-auto">
-                                    <div className="p-6 pb-2 flex justify-between items-center">
-                                        <h3 className="font-black text-slate-800 flex items-center gap-2">
-                                            <Icon name="shopping-cart" size={18} className="text-indigo-500" />
-                                            สรุปยอด ({entries.length})
-                                        </h3>
-                                        {entries.length > 0 && (
-                                            <button onClick={() => setEntries([])} className="text-[10px] text-rose-500 font-bold hover:bg-rose-50 px-3 py-1 rounded-full transition-colors uppercase tracking-widest border border-rose-100">ล้างรายการ</button>
-                                        )}
-                                    </div>
-
+                                    <div className="p-6 flex justify-between items-center"><h3 className="font-black text-slate-800 flex items-center gap-2"><Icon name="shopping-cart" size={18} className="text-indigo-500" /> ตะกร้า ({entries.length})</h3></div>
                                     <div className="flex-grow overflow-y-auto space-y-2 p-6 custom-scrollbar">
                                         {entries.length === 0 ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4 py-20">
-                                                <Icon name="box" size={80} className="opacity-10" />
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4 py-20 opacity-30">
+                                                <Icon name="box" size={64} />
                                                 <p className="text-sm font-bold uppercase tracking-widest">ว่างเปล่า</p>
                                             </div>
                                         ) : (
                                             entries.map(item => (
-                                                <div key={item.id} className={`bg-white p-4 rounded-2xl border-2 flex justify-between items-center shadow-sm transition-all animate-in slide-in-from-right duration-300 ${item.isPrimary ? 'border-indigo-200 ring-2 ring-indigo-50' : 'border-slate-100'}`}>
-                                                    <div className="flex flex-col">
-                                                        <div className={`font-mono font-black text-2xl tracking-tighter leading-none ${item.isPrimary ? 'text-indigo-700' : 'text-slate-800'}`}>
-                                                            {item.number}
-                                                        </div>
-                                                        <div className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-1">
-                                                            {item.type} {item.isPrimary && ['3 ตัวกลับ', '2 ตัวบนกลับ', '2 ตัวล่างกลับ'].includes(item.type) && '(หลัก)'}
-                                                        </div>
+                                                <div key={item.id} className={`bg-white p-4 rounded-xl border-2 flex justify-between items-center shadow-sm transition-all ${item.isPrimary ? 'border-indigo-200 ring-2 ring-indigo-50' : 'border-slate-50 opacity-80'}`}>
+                                                    <div>
+                                                        <div className={`font-mono font-black text-2xl ${item.isPrimary ? 'text-indigo-700' : 'text-slate-600'}`}>{item.number}</div>
+                                                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{item.typeName} {item.isPrimary && '(หลัก)'}</div>
                                                     </div>
-                                                    <div className="flex items-center gap-5">
-                                                        <span className={`font-black text-lg ${item.isPrimary ? 'text-indigo-600' : 'text-slate-700'}`}>
-                                                            ฿{item.price.toLocaleString()}
-                                                        </span>
-                                                        <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-rose-500 transition-colors">
-                                                            <Icon name="trash-2" size={20} />
-                                                        </button>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="font-black text-lg text-slate-700">฿{item.price.toLocaleString()}</span>
+                                                        <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-200 hover:text-rose-500 transition-colors"><Icon name="trash-2" size={18} /></button>
                                                     </div>
                                                 </div>
                                             ))
                                         )}
                                     </div>
-
-                                    <div className="p-6 bg-white border-t-2 border-slate-100 rounded-b-2xl">
-                                        <div className="flex justify-between items-end mb-6">
-                                            <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">ยอดรวมสุทธิ</span>
-                                            <span className="text-4xl font-black text-indigo-900 leading-none">฿{totalPrice.toLocaleString()}</span>
+                                    <div className="p-6 bg-white border-t-2 border-slate-100 space-y-3">
+                                        <div className="flex justify-between items-end"><span className="text-xs text-slate-400 font-bold uppercase">ยอดรวม</span><span className="text-3xl font-black text-indigo-900 leading-none">฿{totalPrice.toLocaleString()}</span></div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button 
+                                                onClick={() => setShowPreview(true)} 
+                                                disabled={entries.length === 0}
+                                                className="py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 shadow-sm transition-all active:scale-95 disabled:opacity-30"
+                                            >
+                                                <Icon name="eye" size={18} /> ดูตัวอย่าง PDF
+                                            </button>
+                                            <button onClick={saveToGoogleSheets} disabled={isSaving || entries.length === 0} className="py-3 rounded-xl text-white font-bold flex justify-center items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all shadow-lg shadow-emerald-100 disabled:opacity-30"><Icon name="send" /> ส่งข้อมูล</button>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="p-8 space-y-10 max-w-2xl mx-auto min-h-[500px]">
+                                <h2 className="text-3xl font-black text-slate-800 border-b-4 border-indigo-100 pb-4 flex items-center gap-3"><Icon name="settings-2" className="text-indigo-600" /> การตั้งค่า</h2>
+                                <div className="space-y-4">
+                                    <label className="text-sm font-black text-slate-500 uppercase tracking-widest block">URL ของ Google Sheets</label>
+                                    <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" />
+                                </div>
+                                <div className="space-y-5 pt-6">
+                                    <div className="flex justify-between items-end"><label className="text-sm font-black text-slate-500 uppercase tracking-widest block">จัดการเลขปิด (ประจำงวด)</label><button onClick={() => setBlockedNumbers([])} className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50">ล้างทั้งหมด</button></div>
+                                    <div className="flex gap-3"><input id="new-block-input" type="number" placeholder="กรอกเลขปิด" className="flex-grow p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xl outline-none focus:border-rose-300" /><button onClick={() => { const v = document.getElementById('new-block-input').value; if(v) setBlockedNumbers([...blockedNumbers, v]); document.getElementById('new-block-input').value = ''; }} className="bg-rose-600 text-white px-8 rounded-2xl font-black transition-all shadow-lg active:scale-95">เพิ่ม</button></div>
+                                    <div className="grid grid-cols-4 gap-3">{blockedNumbers.map(n => <div key={n} className="bg-white text-rose-600 p-3 rounded-xl font-black border-2 border-rose-50 flex justify-between items-center shadow-sm"><span>{n}</span><button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))}><Icon name="x-circle" size={14} /></button></div>)}</div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* --- Preview Modal --- */}
+                        {showPreview && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all overflow-y-auto">
+                                <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh]">
+                                    {/* Modal Header */}
+                                    <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-3xl">
+                                        <h2 className="font-black text-slate-700 flex items-center gap-2">
+                                            <Icon name="eye" size={20} className="text-indigo-600" /> ตรวจสอบตัวอย่างรายงาน
+                                        </h2>
+                                        <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                                            <Icon name="x" size={24} />
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Modal Content (The actual preview) */}
+                                    <div className="flex-grow overflow-y-auto p-4 md:p-10 bg-slate-100">
+                                        <div className="bg-white p-6 md:p-12 shadow-sm rounded-lg mx-auto max-w-[800px] pointer-events-none select-none border border-slate-200">
+                                            <div className="border-b-4 border-indigo-700 pb-4 mb-6 flex justify-between items-end">
+                                                <div>
+                                                    <h1 className="text-3xl font-black text-indigo-700 leading-tight">สรุปรายการลงหวย</h1>
+                                                    <p className="text-slate-500 font-bold tracking-widest uppercase text-[10px]">Smart Lotto Management &bull; Matrix Expansion</p>
+                                                </div>
+                                                <div className="text-right text-slate-400 font-bold uppercase text-[10px]">
+                                                    พิมพ์เมื่อ: {new Date().toLocaleString('th-TH')}
+                                                </div>
+                                            </div>
+                                            <table className="w-full mb-10 text-sm">
+                                                <thead>
+                                                    <tr className="bg-slate-100">
+                                                        <th className="p-3 text-left font-black text-slate-600">ลำดับ</th>
+                                                        <th className="p-3 text-left font-black text-slate-600">ตัวเลข</th>
+                                                        <th className="p-3 text-left font-black text-slate-600">ประเภท</th>
+                                                        <th className="p-3 text-right font-black text-slate-600">ราคา (บาท)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {entries.map((item, index) => (
+                                                        <tr key={item.id} className="border-b border-slate-50">
+                                                            <td className="p-3 text-slate-400 font-bold">{index + 1}</td>
+                                                            <td className="p-3 font-mono font-black text-xl text-slate-800">{item.number}</td>
+                                                            <td className="p-3 text-indigo-600 font-black text-[10px] uppercase">{item.typeName}</td>
+                                                            <td className="p-3 text-right font-black text-lg text-slate-700">฿{item.price.toLocaleString()}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr className="bg-indigo-50/50">
+                                                        <td colSpan="3" className="p-6 text-right font-black text-xl uppercase text-indigo-900">รวมยอดสุทธิทั้งสิ้น</td>
+                                                        <td className="p-6 text-right font-black text-3xl text-indigo-700 underline decoration-double">฿{totalPrice.toLocaleString()}</td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                            <div className="text-center text-slate-300 font-black uppercase tracking-[0.4em] text-[8px] pt-8 border-t border-slate-100">
+                                                Professional Edition &bull; Generated via Cloud System
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Modal Footer (Controls) */}
+                                    <div className="p-4 border-t bg-white rounded-b-3xl flex flex-col md:flex-row gap-3">
                                         <button 
-                                            onClick={saveToGoogleSheets} 
-                                            disabled={isSaving || entries.length === 0} 
-                                            className={`w-full py-5 rounded-2xl text-white font-black flex justify-center items-center gap-3 transition-all shadow-2xl ${isSaving || entries.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100 active:scale-95'}`}
+                                            onClick={() => setShowPreview(false)}
+                                            className="flex-1 py-4 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all"
                                         >
-                                            {isSaving ? (
-                                                <><Icon name="loader" className="animate-spin" /> กำลังบันทึก...</>
+                                            ยกเลิก/กลับไปแก้ไข
+                                        </button>
+                                        <button 
+                                            onClick={exportPDF}
+                                            disabled={isGeneratingPDF}
+                                            className={`flex-[2] py-4 rounded-2xl text-white font-black flex justify-center items-center gap-2 transition-all shadow-xl ${isGeneratingPDF ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100 active:scale-95'}`}
+                                        >
+                                            {isGeneratingPDF ? (
+                                                <><Icon name="loader" className="animate-spin" /> กำลังสร้างไฟล์ PDF...</>
                                             ) : (
-                                                <><Icon name="send" size={24} /> บันทึกลง Google Sheet</>
+                                                <><Icon name="download" /> ยืนยันดาวน์โหลด PDF</>
                                             )}
                                         </button>
                                     </div>
                                 </div>
                             </div>
-                        ) : (
-                            <div className="p-8 space-y-10 max-w-2xl mx-auto min-h-[550px]">
-                                <h2 className="text-3xl font-black text-slate-800 border-b-4 border-indigo-100 pb-4 flex items-center gap-3">
-                                    <Icon name="settings-2" className="text-indigo-600" size={32} />
-                                    การตั้งค่า
-                                </h2>
-                                
-                                <div className="space-y-4">
-                                    <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                                        <Icon name="link-2" size={20} className="text-emerald-500" />
-                                        URL ของ Google Sheets
-                                    </label>
-                                    <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" />
-                                </div>
-
-                                <div className="space-y-5 pt-6">
-                                    <div className="flex justify-between items-end">
-                                        <div>
-                                            <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
-                                                <Icon name="shield-off" size={20} className="text-rose-500" />
-                                                จัดการเลขปิด (ประจำงวด)
-                                            </label>
-                                            <p className="text-[10px] text-slate-400 mt-2 font-bold">* ใส่เพียงเลขเดียว ระบบจะล็อกชุดสลับให้อัตโนมัติ</p>
-                                        </div>
-                                        <button 
-                                            onClick={clearBlockedNumbers}
-                                            className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50 transition-colors uppercase tracking-widest"
-                                        >
-                                            ล้างเลขปิดทั้งหมด
-                                        </button>
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <input id="new-block-input" type="number" placeholder="กรอกเลขที่ต้องการปิด" className="flex-grow p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-rose-500/10 font-mono text-xl" />
-                                        <button onClick={() => {
-                                            const v = document.getElementById('new-block-input').value;
-                                            if(v) setBlockedNumbers([...blockedNumbers, v]);
-                                            document.getElementById('new-block-input').value = '';
-                                        }} className="bg-rose-600 hover:bg-rose-700 text-white px-8 rounded-2xl font-black transition-all shadow-lg active:scale-95">เพิ่ม</button>
-                                    </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-                                        {blockedNumbers.map(n => (
-                                            <div key={n} className="bg-white text-rose-600 px-4 py-3 rounded-2xl font-black border-2 border-rose-50 flex justify-between items-center group shadow-sm transition-all hover:border-rose-200">
-                                                <span className="font-mono text-xl tracking-tighter">{n}</span>
-                                                <button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))} className="text-slate-300 hover:text-rose-600 transition-colors">
-                                                    <Icon name="x-circle" size={18} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
                         )}
-                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] border-t-2 border-slate-100">
-                            Professional Lotto Management &bull; Cloud Edition &bull; 2026
-                        </footer>
+
+                        {/* --- Hidden Template for actual PDF Export --- */}
+                        <div id="pdf-report-template">
+                            <div className="border-b-4 border-indigo-700 pb-4 mb-6 flex justify-between items-end">
+                                <div>
+                                    <h1 className="text-4xl font-black text-indigo-700">สรุปรายการหวย</h1>
+                                    <p className="text-slate-500 font-bold tracking-widest uppercase text-sm">Matrix Expansion & Multi-Price Mode</p>
+                                </div>
+                                <div className="text-right text-slate-400 font-bold uppercase text-xs">Date: {new Date().toLocaleString('th-TH')}</div>
+                            </div>
+                            <table className="w-full mb-10 text-lg">
+                                <thead>
+                                    <tr className="bg-slate-100">
+                                        <th className="p-4 text-left font-black text-slate-600">ลำดับ</th><th className="p-4 text-left font-black text-slate-600">ตัวเลข</th><th className="p-4 text-left font-black text-slate-600">ประเภท</th><th className="p-4 text-right font-black text-slate-600">ราคา</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {entries.map((item, index) => (
+                                        <tr key={item.id} className="border-b border-slate-50">
+                                            <td className="p-4 text-slate-400 font-bold">{index + 1}</td>
+                                            <td className="p-4 font-mono font-black text-xl text-slate-800">{item.number}</td>
+                                            <td className="p-4 text-indigo-600 font-black text-xs uppercase">{item.typeName}</td>
+                                            <td className="p-4 text-right font-black text-xl text-slate-700">฿{item.price.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-indigo-50/50">
+                                        <td colSpan="3" className="p-6 text-right font-black text-2xl uppercase text-indigo-900">รวมยอดสุทธิทั้งสิ้น</td>
+                                        <td className="p-6 text-right font-black text-4xl text-indigo-700">฿{totalPrice.toLocaleString()}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] border-t-2 border-slate-100">Smart Data Sync &bull; Professional Edition</footer>
                     </div>
                 </div>
             );
         };
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
