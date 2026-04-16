@@ -27,7 +27,6 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
         
-        // Icon wrapper for Lucide in CDN environment
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => {
                 if (window.lucide) {
@@ -47,22 +46,22 @@
             const [activeTab, setActiveTab] = useState('entry');
             const [isSaving, setIsSaving] = useState(false);
             
-            // Your Pre-configured Google Web App URL
             const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
             const typeList = [
                 { id: '3-direct', label: '3 ตัวตรง' },
-                { id: '2-todd', label: '2 ตัวโต๊ด' },
                 { id: '3-permute', label: '3 ตัวกลับ' },
+                { id: '2-todd', label: '2 ตัวโต๊ด' },
                 { id: '2-top', label: '2 ตัวบน' },
+                { id: '2-top-permute', label: '2 ตัวบนกลับ' },
                 { id: '2-bottom', label: '2 ตัวล่าง' },
+                { id: '2-bottom-permute', label: '2 ตัวล่างกลับ' },
                 { id: 'top-float', label: 'ตัวลอยบน' },
                 { id: 'bottom-float', label: 'ตัวลอยล่าง' },
                 { id: 'pack-4', label: 'แพ 4 ตัว' },
                 { id: 'pack-5', label: 'แพ 5 ตัว' }
             ];
 
-            // Permutation logic for Smart Block and Auto-Calculate
             const getPermutations = (str) => {
                 if (!str || typeof str !== 'string') return [];
                 if (str.length <= 1) return [str];
@@ -89,8 +88,6 @@
                     return;
                 }
 
-                // --- Smart Block Logic ---
-                // Check if current input or its variants are in blocked list
                 const inputPerms = getPermutations(number);
                 const hitBlock = inputPerms.find(p => blockedNumbers.includes(p));
 
@@ -100,23 +97,36 @@
                 }
 
                 let newItems = [];
-                const currentPrice = parseFloat(price);
+                
+                // Parsing Multi-Price (e.g., 110x22)
+                const priceParts = price.toLowerCase().split(/[x*]/);
+                const mainPrice = parseFloat(priceParts[0]);
+                const subPrice = priceParts.length > 1 ? parseFloat(priceParts[1]) : mainPrice;
 
-                if (type === '3-permute') {
+                // Check if current type is a "permute" type
+                const isPermute = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
+
+                if (isPermute) {
                     const perms = getPermutations(number);
-                    newItems = perms.map(p => ({
-                        id: Math.random().toString(36).substr(2, 9),
-                        number: p,
-                        type: '3 ตัวกลับ',
-                        price: currentPrice
-                    }));
+                    const selectedType = typeList.find(t => t.id === type);
+                    newItems = perms.map((p) => {
+                        const itemPrice = (p === number) ? mainPrice : subPrice;
+                        return {
+                            id: Math.random().toString(36).substr(2, 9),
+                            number: p,
+                            type: selectedType.label,
+                            price: itemPrice,
+                            isPrimary: p === number
+                        };
+                    });
                 } else {
                     const selectedType = typeList.find(t => t.id === type);
                     newItems = [{
                         id: Math.random().toString(36).substr(2, 9),
                         number,
                         type: selectedType ? selectedType.label : 'ทั่วไป',
-                        price: currentPrice
+                        price: mainPrice,
+                        isPrimary: true
                     }];
                 }
 
@@ -130,7 +140,6 @@
                 if (entries.length === 0) return;
                 setIsSaving(true);
                 try {
-                    // Using no-cors as per Apps Script requirement for simple POSTs
                     await fetch(sheetUrl, {
                         method: 'POST',
                         mode: 'no-cors',
@@ -157,7 +166,7 @@
                                 <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
                                     <Icon name="target" /> ระบบลงหวยอัจฉริยะ
                                 </h1>
-                                <p className="text-[10px] md:text-xs text-indigo-200 uppercase tracking-widest mt-1">Smart Block & Cloud Sync</p>
+                                <p className="text-[10px] md:text-xs text-indigo-200 uppercase tracking-widest mt-1">Smart Block & Multi-Price Sync</p>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-lg' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
@@ -178,12 +187,12 @@
                                 {/* Form Side */}
                                 <div className="p-5 md:p-8 space-y-6">
                                     <form onSubmit={handleAddEntry} className="space-y-5">
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                             {typeList.map(t => (
                                                 <button 
                                                     key={t.id} 
                                                     type="button" 
-                                                    onClick={() => setType(t.id)} 
+                                                    onClick={() => { setType(t.id); setNumber(''); }} 
                                                     className={`p-2 text-[10px] md:text-[11px] rounded-xl border-2 transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-indigo-200'}`}
                                                 >
                                                     {t.label}
@@ -193,12 +202,26 @@
                                         
                                         <div className="flex gap-4">
                                             <div className="w-1/2">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ตัวเลข</label>
-                                                <input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="000" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center" />
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">ตัวเลข</label>
+                                                <input 
+                                                    type="number" 
+                                                    value={number} 
+                                                    onChange={e => setNumber(e.target.value)} 
+                                                    placeholder="เลข" 
+                                                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center" 
+                                                />
                                             </div>
                                             <div className="w-1/2">
-                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ราคา (บาท)</label>
-                                                <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="0" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center" />
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">
+                                                    ราคา {['3-permute', '2-top-permute', '2-bottom-permute'].includes(type) && <span className="text-indigo-500">(เช่น 100x20)</span>}
+                                                </label>
+                                                <input 
+                                                    type="text" 
+                                                    value={price} 
+                                                    onChange={e => setPrice(e.target.value)} 
+                                                    placeholder="0" 
+                                                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center font-bold text-indigo-700" 
+                                                />
                                             </div>
                                         </div>
 
@@ -243,13 +266,19 @@
                                             </div>
                                         ) : (
                                             entries.map(item => (
-                                                <div key={item.id} className="bg-white p-4 rounded-2xl border-2 border-slate-100 flex justify-between items-center shadow-sm hover:border-indigo-300 transition-all animate-in slide-in-from-right duration-300">
+                                                <div key={item.id} className={`bg-white p-4 rounded-2xl border-2 flex justify-between items-center shadow-sm transition-all animate-in slide-in-from-right duration-300 ${item.isPrimary ? 'border-indigo-200 ring-2 ring-indigo-50' : 'border-slate-100'}`}>
                                                     <div className="flex flex-col">
-                                                        <div className="font-mono font-black text-2xl text-slate-800 tracking-tighter leading-none">{item.number}</div>
-                                                        <div className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-1">{item.type}</div>
+                                                        <div className={`font-mono font-black text-2xl tracking-tighter leading-none ${item.isPrimary ? 'text-indigo-700' : 'text-slate-800'}`}>
+                                                            {item.number}
+                                                        </div>
+                                                        <div className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-1">
+                                                            {item.type} {item.isPrimary && ['3 ตัวกลับ', '2 ตัวบนกลับ', '2 ตัวล่างกลับ'].includes(item.type) && '(ตัวหลัก)'}
+                                                        </div>
                                                     </div>
                                                     <div className="flex items-center gap-5">
-                                                        <span className="font-black text-slate-700 text-lg">฿{item.price.toLocaleString()}</span>
+                                                        <span className={`font-black text-lg ${item.isPrimary ? 'text-indigo-600' : 'text-slate-700'}`}>
+                                                            ฿{item.price.toLocaleString()}
+                                                        </span>
                                                         <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-rose-500 transition-colors">
                                                             <Icon name="trash-2" size={20} />
                                                         </button>
