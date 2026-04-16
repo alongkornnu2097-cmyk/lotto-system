@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบลงตัวเลขหวย - Multi-Receiver Management</title>
+    <title>ระบบลงตัวเลขหวย - Multi-Receiver Sync</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & Babel -->
@@ -24,6 +24,7 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         
+        /* สไตล์สำหรับพื้นที่เรนเดอร์ PDF (ซ่อนจากหน้าจอปกติ) */
         #pdf-render-zone { 
             position: absolute; 
             left: -9999px; 
@@ -48,13 +49,16 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
         
+        // คอมโพเนนต์ Icon แบบเรียกใช้ Lucide โดยตรง
         const Icon = ({ name, size = 24, className = "" }) => {
-            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name, size, className]);
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [name, size, className]);
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         const App = () => {
-            // --- Multi-Receiver State อัปเดตชื่อจ้าว ---
+            // --- Multi-Receiver State ---
             const [receivers, setReceivers] = useState([
                 { id: 'r1', name: 'พี่อ้อม', blockedNumbers: [] },
                 { id: 'r2', name: 'น้าไก่', blockedNumbers: [] }
@@ -73,7 +77,7 @@
             const [pdfExportData, setPdfExportData] = useState({ chunks: [], currentIndex: -1 });
             const [pdfInstance, setPdfInstance] = useState(null);
             
-            const [sheetUrl, setSheetUrl] = useState('');
+            const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
             const activeReceiver = useMemo(() => 
                 receivers.find(r => r.id === activeReceiverId) || receivers[0]
@@ -82,13 +86,11 @@
             const typeList = [
                 { id: '3-direct', label: '3 ตัวตรง' },
                 { id: '3-permute', label: '3 ตัวกลับ' },
-                { id: '2-todd', label: '2 ตัวโต๊ด' },
                 { id: '2-top', label: '2 ตัวบน' },
-                { id: '2-top-permute', label: '2 ตัวบนกลับ' },
                 { id: '2-bottom', label: '2 ตัวล่าง' },
-                { id: '2-bottom-permute', label: '2 ตัวล่างกลับ' },
-                { id: 'top-float', label: 'ตัวลอยบน' },
-                { id: 'bottom-float', label: 'ตัวลอยล่าง' },
+                { id: '2-todd', label: '2 ตัวโต๊ด' },
+                { id: 'top-float', label: 'ลอยบน' },
+                { id: 'bottom-float', label: 'ลอยล่าง' },
                 { id: 'pack-4', label: 'แพ 4 ตัว' },
                 { id: 'pack-5', label: 'แพ 5 ตัว' }
             ];
@@ -136,18 +138,15 @@
                 }
 
                 let newItems = [];
-                const isPermuteType = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
-
-                if (isPermuteType) {
+                if (type === '3-permute') {
                     const perms = getPermutations(number);
-                    const selectedType = typeList.find(t => t.id === type);
                     newItems = perms.map(p => {
                         const itemPrice = (p === number) ? mainPrice : subPrice;
                         return {
                             id: Math.random().toString(36).substr(2, 9),
                             number: p,
                             typeId: type,
-                            typeName: selectedType.label,
+                            typeName: '3 ตัวกลับ',
                             displayValue: `${p}=${itemPrice}`, 
                             price: itemPrice,
                             isPrimary: p === number,
@@ -171,12 +170,11 @@
                 setEntries([...entries, ...newItems]);
                 setNumber('');
                 setPrice('');
-                showAlert(`เพิ่ม ${newItems.length} รายการให้ [${activeReceiver.name}] แล้ว`, 'success');
+                showAlert(`เพิ่มรายการให้ [${activeReceiver.name}] แล้ว`, 'success');
             };
 
             const saveToGoogleSheets = async () => {
                 if (entries.length === 0) return;
-                if (!sheetUrl) { showAlert('กรุณาตั้งค่า Web App URL ในหน้าตั้งค่าก่อน'); return; }
                 setIsSaving(true);
                 try {
                     await fetch(sheetUrl, {
@@ -203,7 +201,6 @@
             };
 
             const startExportPDF = () => {
-                if (entries.length === 0) return;
                 setIsGeneratingPDF(true);
                 const chunks = chunkArray(entries, 20); 
                 setPdfExportData({ chunks, currentIndex: 0 });
@@ -213,36 +210,45 @@
                 if (isGeneratingPDF && pdfExportData.currentIndex >= 0) {
                     processPdfPage();
                 }
-            }, [pdfExportData.currentIndex]);
+            }, [pdfExportData.currentIndex, isGeneratingPDF]);
 
             const processPdfPage = async () => {
                 const { chunks, currentIndex } = pdfExportData;
                 const element = document.getElementById('pdf-render-zone');
+                if (!element) return;
+
                 try {
                     await new Promise(r => setTimeout(r, 1200)); 
-                    const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: "#ffffff", logging: false });
+                    const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
                     const imgData = canvas.toDataURL('image/png');
                     let currentPdf = pdfInstance;
-                    if (currentIndex === 0) { currentPdf = new jspdf.jsPDF('p', 'mm', 'a4'); } else { currentPdf.addPage(); }
+
+                    const { jsPDF } = window.jspdf;
+                    if (currentIndex === 0) {
+                        currentPdf = new jsPDF('p', 'mm', 'a4');
+                    } else {
+                        currentPdf.addPage();
+                    }
+
                     const pdfWidth = currentPdf.internal.pageSize.getWidth();
                     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
                     currentPdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+
                     if (currentIndex < chunks.length - 1) {
                         setPdfInstance(currentPdf);
                         setPdfExportData(prev => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
                     } else {
-                        currentPdf.save(`Summary-Report-${new Date().getTime()}.pdf`);
+                        currentPdf.save(`Report-${new Date().getTime()}.pdf`);
                         showAlert('ดาวน์โหลด PDF สำเร็จ', 'success');
-                        resetPdfExport();
+                        setIsGeneratingPDF(false);
+                        setShowPreview(false);
+                        setPdfExportData({ chunks: [], currentIndex: -1 });
+                        setPdfInstance(null);
                     }
-                } catch (err) { showAlert('สร้าง PDF ไม่สำเร็จ'); resetPdfExport(); }
-            };
-
-            const resetPdfExport = () => {
-                setIsGeneratingPDF(false);
-                setShowPreview(false);
-                setPdfExportData({ chunks: [], currentIndex: -1 });
-                setPdfInstance(null);
+                } catch (err) {
+                    showAlert('สร้าง PDF ไม่สำเร็จ');
+                    setIsGeneratingPDF(false);
+                }
             };
 
             const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
@@ -250,147 +256,200 @@
             const addReceiver = () => {
                 const name = prompt('กรุณาระบุชื่อจ้าวใหม่:');
                 if (name) {
-                    const newReceiver = { id: 'r' + Date.now(), name, blockedNumbers: [] };
-                    setReceivers([...receivers, newReceiver]);
-                    showAlert('เพิ่มจ้าวสำเร็จ', 'success');
+                    setReceivers([...receivers, { id: 'r' + Date.now(), name, blockedNumbers: [] }]);
                 }
-            };
-
-            const removeReceiver = (id) => {
-                if (receivers.length <= 1) { showAlert('ต้องมีอย่างน้อย 1 จ้าว'); return; }
-                if (confirm('คุณต้องการลบจ้าวนี้ใช่หรือไม่? ข้อมูลจะหายไปทั้งหมด')) {
-                    const updated = receivers.filter(r => r.id !== id);
-                    setReceivers(updated);
-                    if (activeReceiverId === id) setActiveReceiverId(updated[0].id);
-                }
-            };
-
-            const updateBlockedNumbers = (id, newNumber) => {
-                setReceivers(receivers.map(r => r.id === id ? { ...r, blockedNumbers: [...r.blockedNumbers, newNumber] } : r));
-            };
-
-            const deleteBlockedNumber = (id, num) => {
-                setReceivers(receivers.map(r => r.id === id ? { ...r, blockedNumbers: r.blockedNumbers.filter(n => n !== num) } : r));
             };
 
             return (
-                <div className="min-h-screen p-2 md:p-8">
+                <div className="min-h-screen bg-slate-50 p-4 md:p-8">
                     <div className="max-w-4xl mx-auto shadow-2xl rounded-2xl overflow-hidden bg-white">
-                        <header className="bg-indigo-700 text-white p-5 flex justify-between items-center">
+                        <header className="bg-indigo-700 text-white p-6 flex justify-between items-center shadow-lg">
                             <div>
-                                <h1 className="text-xl font-bold flex items-center gap-2"><Icon name="target" /> ระบบลงหวยอัจฉริยะ</h1>
-                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Multi-Receiver Sheet Sync Mode</p>
+                                <h1 className="text-2xl font-bold flex items-center gap-2">
+                                    <Icon name="database" className="text-indigo-300" /> ระบบลงตัวเลขหวยอัจฉริยะ
+                                </h1>
+                                <p className="text-indigo-100 text-sm tracking-widest uppercase text-[10px] mt-1">Matrix Expansion & Multi-Receiver Sync</p>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-md scale-105' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
-                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-md scale-105' : 'hover:bg-indigo-600'}`}><Icon name="settings" size={20}/></button>
+                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition ${activeTab === 'entry' ? 'bg-white text-indigo-700' : 'hover:bg-indigo-600'}`}><Icon name="list" size={24} /></button>
+                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-xl transition ${activeTab === 'settings' ? 'bg-white text-indigo-700' : 'hover:bg-indigo-600'}`}><Icon name="settings" size={24} /></button>
                             </div>
                         </header>
 
                         {notification && (
                             <div className={`fixed top-4 right-4 z-[200] p-4 rounded-2xl shadow-2xl text-white font-bold animate-bounce flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
-                                <Icon name={notification.type === 'error' ? 'shield-alert' : 'check-circle-2'} size={24} />
+                                <Icon name={notification.type === 'error' ? 'x-circle' : 'check-circle-2'} />
                                 <span>{notification.msg}</span>
                             </div>
                         )}
 
-                        {activeTab === 'entry' ? (
-                            <div className="grid md:grid-cols-2 divide-x divide-slate-100 min-h-[550px]">
-                                <div className="p-5 md:p-8 space-y-6">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block font-bold">เลือกจ้าวที่กำลังลง:</label>
-                                        <div className="flex flex-wrap gap-2">
-                                            {receivers.map(r => (
-                                                <button key={r.id} onClick={() => setActiveReceiverId(r.id)} className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition-all ${activeReceiverId === r.id ? 'bg-indigo-100 border-indigo-600 text-indigo-700' : 'bg-white border-slate-100 text-slate-400 hover:border-indigo-200'}`}>{r.name}</button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <form onSubmit={handleAddEntry} className="space-y-5">
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {typeList.map(t => (
-                                                <button key={t.id} type="button" onClick={() => { setType(t.id); setNumber(''); }} className={`p-2 text-[10px] rounded-xl border-2 transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-md' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-indigo-200'}`}>{t.label}</button>
-                                            ))}
-                                        </div>
-                                        <div className="flex gap-4">
-                                            <div className="w-1/2"><label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ตัวเลข</label><input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="000" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:border-indigo-500 text-center" /></div>
-                                            <div className="w-1/2"><label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-wider">ราคา (100*20)</label><input type="text" value={price} onChange={e => setPrice(e.target.value)} placeholder="0" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:border-indigo-500 text-center font-bold text-indigo-700" /></div>
-                                        </div>
-                                        <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-lg flex items-center justify-center gap-3 transition-transform active:scale-95"><Icon name="plus" /> เพิ่มรายการลงจ้าว [{activeReceiver.name}]</button>
-                                    </form>
-
-                                    <div className="bg-rose-50 p-4 rounded-xl border-2 border-rose-100 shadow-sm">
-                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-2 font-black uppercase text-[10px]"><Icon name="lock" size={14} /> เลขปิดเฉพาะของ [{activeReceiver.name}]:</div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {activeReceiver.blockedNumbers.length > 0 ? (
-                                                activeReceiver.blockedNumbers.map(n => <span key={n} className="bg-white px-3 py-1 rounded-lg border border-rose-200 text-[10px] font-mono font-black text-rose-600 shadow-sm">{n}</span>)
-                                            ) : (
-                                                <span className="text-[10px] text-rose-400 italic">ไม่มีเลขปิดสำหรับจ้าวนี้</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="p-0 bg-slate-50/30 flex flex-col h-[600px] md:h-auto">
-                                    <div className="p-6 flex justify-between items-center border-b border-slate-100"><h3 className="font-black text-slate-800 flex items-center gap-2"><Icon name="shopping-cart" size={18} className="text-indigo-500" /> ตะกร้ารวม ({entries.length})</h3></div>
-                                    <div className="flex-grow overflow-y-auto space-y-2 p-6 custom-scrollbar">
-                                        {entries.length === 0 ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4 py-20 opacity-30"><Icon name="box" size={64} /><p className="text-sm font-bold uppercase tracking-widest">ยังไม่มีรายการ</p></div>
-                                        ) : (
-                                            entries.map(item => (
-                                                <div key={item.id} className={`bg-white p-4 rounded-xl border-2 flex justify-between items-center shadow-sm transition-all ${item.isPrimary ? 'border-indigo-200 ring-2 ring-indigo-50' : 'border-slate-50 opacity-80'}`}>
-                                                    <div><div className={`font-mono font-black text-2xl ${item.isPrimary ? 'text-indigo-700' : 'text-slate-600'}`}>{item.number}</div><div className="flex gap-2 mt-1"><div className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter bg-slate-100 px-2 py-0.5 rounded-full">{item.typeName}</div><div className="text-[8px] text-indigo-600 font-bold uppercase tracking-tighter bg-indigo-50 px-2 py-0.5 rounded-full">To: {item.receiverName}</div></div></div>
-                                                    <div className="flex items-center gap-4"><span className="font-black text-lg text-slate-700">฿{item.price.toLocaleString()}</span><button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-200 hover:text-rose-500 transition-colors"><Icon name="trash-2" size={18} /></button></div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                    <div className="p-6 bg-white border-t-2 border-slate-100 space-y-3">
-                                        <div className="flex justify-between items-end"><span className="text-xs text-slate-400 font-bold uppercase tracking-widest">ยอดรวมทั้งหมด</span><span className="text-3xl font-black text-indigo-900 leading-none">฿{totalPrice.toLocaleString()}</span></div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <button onClick={() => setShowPreview(true)} disabled={entries.length === 0} className="py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 shadow-sm transition-all active:scale-95 disabled:opacity-30"><Icon name="eye" size={18} /> ดูรายงาน PDF</button>
-                                            <button onClick={saveToGoogleSheets} disabled={isSaving || entries.length === 0} className="py-3 rounded-xl text-white font-bold flex justify-center items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all shadow-lg disabled:opacity-30"><Icon name="send" /> ส่งข้อมูลแยกจ้าว</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="p-8 space-y-10 max-w-2xl mx-auto min-h-[500px]">
-                                <h2 className="text-3xl font-black text-slate-800 border-b-4 border-indigo-100 pb-4 flex items-center gap-3"><Icon name="settings-2" className="text-indigo-600" /> ตั้งค่าระบบ</h2>
-                                <div className="space-y-4"><label className="text-sm font-black text-slate-500 uppercase tracking-widest block font-bold">Web App URL (Google Script)</label><input value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all shadow-inner" /></div>
-                                <div className="space-y-6 pt-6 border-t-2 border-slate-100">
-                                    <div className="flex justify-between items-center"><h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">รายชื่อจ้าว & เลขปิด</h3><button onClick={addReceiver} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg flex items-center gap-2 font-bold"><Icon name="user-plus" size={16}/> เพิ่มจ้าวใหม่</button></div>
-                                    <div className="space-y-8">
-                                        {receivers.map(r => (
-                                            <div key={r.id} className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-100 space-y-4">
-                                                <div className="flex justify-between items-center border-b pb-3"><span className="text-lg font-black text-indigo-700 font-black">{r.name}</span><button onClick={() => removeReceiver(r.id)} className="text-rose-400 hover:text-rose-600"><Icon name="trash-2" size={20}/></button></div>
-                                                <div className="space-y-3">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">เพิ่มเลขปิด:</label>
-                                                    <div className="flex gap-2"><input id={`input-${r.id}`} type="number" placeholder="000" className="flex-grow p-3 bg-white border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500 text-lg font-mono" /><button onClick={() => { const v = document.getElementById(`input-${r.id}`).value; if(v) updateBlockedNumbers(r.id, v); document.getElementById(`input-${r.id}`).value = ''; }} className="bg-slate-800 text-white px-6 rounded-xl font-bold active:scale-95 transition-all font-bold">เพิ่ม</button></div>
-                                                    <div className="flex flex-wrap gap-2 pt-2">{r.blockedNumbers.map(num => (<div key={num} className="bg-white px-3 py-1.5 rounded-lg border-2 border-rose-50 text-rose-600 font-mono font-black text-sm flex items-center gap-2 group">{num}<button onClick={() => deleteBlockedNumber(r.id, num)}><Icon name="x-circle" size={14} className="text-slate-300 group-hover:text-rose-500"/></button></div>))}</div>
-                                                </div>
+                        <main className="min-h-[600px]">
+                            {activeTab === 'entry' ? (
+                                <div className="grid md:grid-cols-2 divide-x divide-slate-100">
+                                    <div className="p-6 space-y-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">เลือกจ้าวที่กำลังลง:</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {receivers.map(r => (
+                                                    <button key={r.id} onClick={() => setActiveReceiverId(r.id)} className={`px-4 py-2 rounded-full text-xs font-bold border-2 transition ${activeReceiverId === r.id ? 'bg-indigo-100 border-indigo-600 text-indigo-700 shadow-sm' : 'bg-white border-slate-100 text-slate-400 hover:border-indigo-200'}`}>{r.name}</button>
+                                                ))}
                                             </div>
-                                        ))}
+                                        </div>
+
+                                        <form onSubmit={handleAddEntry} className="space-y-4">
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {typeList.map(t => (
+                                                    <button key={t.id} type="button" onClick={() => setType(t.id)} className={`p-2 text-[10px] rounded-xl border-2 transition ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-indigo-200'}`}>{t.label}</button>
+                                                ))}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <input type="number" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="เลข" className="p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl text-center outline-none focus:border-indigo-500" />
+                                                <input type="text" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="ราคา" className="p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl font-bold text-center text-indigo-700 outline-none focus:border-indigo-500" />
+                                            </div>
+                                            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2"><Icon name="plus" /> เพิ่มรายการ</button>
+                                        </form>
+
+                                        <div className="bg-rose-50 p-4 rounded-2xl border-2 border-rose-100 shadow-inner">
+                                            <div className="flex items-center gap-2 text-rose-800 font-bold mb-2 text-xs uppercase tracking-wider font-bold"><Icon name="alert-circle" size={14} /> เลขปิดของ [{activeReceiver.name}]:</div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {activeReceiver.blockedNumbers.length > 0 ? activeReceiver.blockedNumbers.map(n => <span key={n} className="bg-white px-2 py-1 rounded-lg border border-rose-200 text-xs font-mono font-bold text-rose-600 shadow-sm">{n}</span>) : <span className="text-xs text-rose-300 italic">ไม่มีเลขปิด</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-50/50 flex flex-col h-[600px] md:h-auto">
+                                        <div className="p-6 font-bold text-slate-800 flex items-center justify-between border-b border-slate-100 font-bold">
+                                            <span>ตะกร้ารวม ({entries.length})</span>
+                                        </div>
+                                        <div className="flex-grow overflow-y-auto p-6 space-y-2 custom-scrollbar">
+                                            {entries.length === 0 ? (
+                                                <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-40"><Icon name="database" size={48} /><p className="text-sm font-bold mt-2 uppercase tracking-widest">Empty Basket</p></div>
+                                            ) : entries.map(item => (
+                                                <div key={item.id} className={`bg-white p-4 rounded-xl border-2 flex justify-between items-center shadow-sm transition-all ${item.isPrimary ? 'border-indigo-100 shadow-indigo-100/50' : 'border-slate-50 opacity-80'}`}>
+                                                    <div>
+                                                        <div className="font-mono font-black text-2xl text-slate-800 leading-none mb-1">{item.number}</div>
+                                                        <div className="flex gap-2 text-[8px] font-bold uppercase">
+                                                            <span className="text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">{item.typeName}</span>
+                                                            <span className="text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">จ้าว: {item.receiverName}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="font-bold text-slate-700">฿{item.price.toLocaleString()}</span>
+                                                        <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-200 hover:text-rose-500 transition-colors"><Icon name="trash-2" size={18} /></button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="p-6 bg-white border-t border-slate-100 space-y-3">
+                                            <div className="flex justify-between items-end"><span className="text-xs text-slate-400 font-black uppercase tracking-widest leading-none font-bold">ยอดรวมสุทธิ</span><span className="text-3xl font-black text-indigo-800 leading-none">฿{totalPrice.toLocaleString()}</span></div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button onClick={() => setShowPreview(true)} disabled={entries.length === 0} className="py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 shadow-sm transition active:scale-95 disabled:opacity-30"><Icon name="eye" size={18} /> ดูตัวอย่าง PDF</button>
+                                                <button onClick={saveToGoogleSheets} disabled={isSaving || entries.length === 0} className="py-3 rounded-xl text-white font-bold flex justify-center items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg transition active:scale-95 disabled:opacity-30">{isSaving ? <Icon name="loader" className="animate-spin" /> : <><Icon name="send" size={18} /> ส่งแยกจ้าว</>}</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-                        
-                        {/* Preview Modal */}
+                            ) : (
+                                <div className="p-8 max-w-2xl mx-auto space-y-10">
+                                    <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 shadow-inner">
+                                        <label className="text-sm font-bold text-indigo-900 block mb-2 uppercase tracking-wider font-bold">Web App URL (Google Sheets)</label>
+                                        <input value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} className="w-full p-4 bg-white border-2 border-indigo-100 rounded-2xl font-mono text-xs outline-none focus:ring-4 focus:ring-indigo-500/10" />
+                                    </div>
+                                    <div className="space-y-6">
+                                        <div className="flex justify-between items-center border-b pb-4"><h2 className="text-xl font-black text-slate-800 uppercase font-bold tracking-tight">จัดการชื่อจ้าว</h2><button onClick={addReceiver} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:bg-indigo-700 flex items-center gap-2 font-bold"><Icon name="user-plus" size={16}/> เพิ่มจ้าวใหม่</button></div>
+                                        <div className="grid gap-6">
+                                            {receivers.map(r => (
+                                                <div key={r.id} className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-100 space-y-4">
+                                                    <div className="flex justify-between items-center font-bold">
+                                                        <span className="text-lg font-black text-indigo-700">{r.name}</span>
+                                                        <button onClick={() => receivers.length > 1 && setReceivers(receivers.filter(x => x.id !== r.id))} className="text-rose-300 hover:text-rose-500 transition-colors"><Icon name="trash-2" size={20}/></button>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-bold">เพิ่มเลขปิดสำหรับ {r.name}:</label>
+                                                        <div className="flex gap-2">
+                                                            <input id={`input-${r.id}`} type="number" placeholder="เลขปิด" className="flex-grow p-3 bg-white border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500 font-mono" />
+                                                            <button onClick={() => { const v = document.getElementById(`input-${r.id}`).value; if(v) setReceivers(receivers.map(x => x.id === r.id ? {...x, blockedNumbers: [...x.blockedNumbers, v]} : x)); document.getElementById(`input-${r.id}`).value = ''; }} className="bg-slate-800 text-white px-6 rounded-xl font-bold active:scale-95 transition font-bold">เพิ่ม</button>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {r.blockedNumbers.map(num => <span key={num} className="bg-white px-2.5 py-1 rounded-lg border border-rose-200 text-rose-600 font-mono font-bold flex items-center gap-2 text-xs shadow-sm">{num}<button onClick={() => setReceivers(receivers.map(x => x.id === r.id ? {...x, blockedNumbers: x.blockedNumbers.filter(z => z !== num)} : x))}><Icon name="x" size={12}/></button></span>)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+
+                        {/* Modal พรีวิว */}
                         {showPreview && (
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
                                 <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh]">
-                                    <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-3xl"><h2 className="font-black text-slate-700 flex items-center gap-2"><Icon name="eye" size={20} className="text-indigo-600" /> ตรวจสอบรายงานรวม</h2><button onClick={() => setShowPreview(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><Icon name="x" size={24} /></button></div>
-                                    <div className="flex-grow overflow-y-auto p-4 md:p-10 bg-slate-100 custom-scrollbar"><div className="bg-white p-6 md:p-12 shadow-sm rounded-lg mx-auto max-w-[800px] border border-slate-200"><div className="border-b-4 border-indigo-700 pb-4 mb-6 flex justify-between items-end"><div><h1 className="text-3xl font-black text-indigo-700 leading-tight">สรุปรายการหวยรวมจ้าว</h1><p className="text-slate-500 font-bold tracking-widest uppercase text-[10px]">Multi-Receiver Consolidated Report</p></div><div className="text-right text-slate-400 font-bold uppercase text-[10px]">พิมพ์เมื่อ: {new Date().toLocaleString('th-TH')}</div></div><table className="w-full mb-10 text-sm"><thead><tr className="bg-slate-100"><th className="p-3 text-left">ลำดับ</th><th className="p-3 text-left">ตัวเลข</th><th className="p-3 text-left">ประเภท/จ้าว</th><th className="p-3 text-right">ราคา</th></tr></thead><tbody>{entries.map((item, index) => (<tr key={item.id} className="border-b border-slate-50"><td className="p-3 text-slate-400">{index + 1}</td><td className="p-3 font-mono font-black text-xl">{item.number}</td><td className="p-3"><div><div className="text-indigo-600 text-[10px] uppercase font-bold">{item.typeName}</div><div className="text-slate-400 text-[9px] font-bold italic">To: {item.receiverName}</div></div></td><td className="p-3 text-right font-black text-lg">฿{item.price.toLocaleString()}</td></tr>))}<tr className="bg-indigo-50 font-black"><td colSpan="3" className="p-4 text-right text-indigo-900 text-lg uppercase">รวมยอดสุทธิทั้งสิ้น</td><td className="p-4 text-right text-indigo-700 text-2xl underline decoration-double">฿{totalPrice.toLocaleString()}</td></tr></tbody></table></div></div>
-                                    <div className="p-4 border-t bg-white rounded-b-3xl flex flex-col md:flex-row gap-3"><button onClick={() => setShowPreview(false)} className="flex-1 py-4 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl">กลับไปแก้ไข</button><button onClick={startExportPDF} disabled={isGeneratingPDF} className={`flex-[2] py-4 rounded-2xl text-white font-black flex justify-center items-center gap-2 shadow-xl ${isGeneratingPDF ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{isGeneratingPDF ? <><Icon name="loader" className="animate-spin" /> กำลังสร้าง PDF...</> : <><Icon name="download" /> ยืนยันดาวน์โหลด PDF</>}</button></div>
+                                    <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-3xl font-bold">
+                                        <h2 className="font-bold text-slate-700 flex items-center gap-2"><Icon name="eye" size={20} className="text-indigo-600" /> ตรวจสอบรายงานรวมจ้าว</h2>
+                                        <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><Icon name="x" size={24} /></button>
+                                    </div>
+                                    <div className="flex-grow overflow-y-auto p-4 md:p-10 bg-slate-100 custom-scrollbar">
+                                        <div className="bg-white p-6 md:p-12 shadow-sm rounded-lg mx-auto max-w-[800px] border border-slate-200">
+                                            <div className="border-b-4 border-indigo-700 pb-4 mb-6 flex justify-between items-end">
+                                                <div><h1 className="text-3xl font-black text-indigo-700 leading-tight font-black">สรุปรายการหวยรวม</h1><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 font-bold">Multi-Receiver Consolidated Report</p></div>
+                                                <div className="text-right text-slate-400 text-[10px] font-bold uppercase">พิมพ์เมื่อ: {new Date().toLocaleString('th-TH')}</div>
+                                            </div>
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-slate-50 font-bold text-slate-600 border-b-2"><tr><td className="p-3">ลำดับ</td><td className="p-3">เลข</td><td className="p-3">ประเภท / จ้าว</td><td className="p-3 text-right">ราคา</td></tr></thead>
+                                                <tbody>
+                                                    {entries.map((item, index) => (
+                                                        <tr key={item.id} className="border-b border-slate-50"><td className="p-3 text-slate-400">{index+1}</td><td className="p-3 font-mono font-bold text-xl leading-none text-slate-900">{item.number}</td><td className="p-3 text-indigo-600 uppercase text-[10px] font-bold">{item.typeName} ({item.receiverName})</td><td className="p-3 text-right font-bold text-lg text-slate-900 font-bold">฿{item.price.toLocaleString()}</td></tr>
+                                                    ))}
+                                                    <tr className="bg-indigo-50 font-black"><td colSpan="3" className="p-6 text-right text-indigo-900 text-xl uppercase font-bold tracking-tighter">ยอดรวมสุทธิทั้งสิ้น</td><td className="p-6 text-right text-indigo-700 text-3xl decoration-double underline font-black">฿{totalPrice.toLocaleString()}</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <div className="p-6 border-t bg-white rounded-b-3xl flex flex-col md:flex-row gap-3">
+                                        <button onClick={() => setShowPreview(false)} className="flex-1 py-4 font-bold bg-slate-100 rounded-2xl hover:bg-slate-200 transition-all font-bold">กลับไปแก้ไข</button>
+                                        <button onClick={startExportPDF} disabled={isGeneratingPDF} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl flex items-center justify-center gap-2 transition active:scale-95 font-bold shadow-indigo-200">
+                                            {isGeneratingPDF ? <Icon name="loader" className="animate-spin" /> : <><Icon name="file-down" size={20} /> ยืนยันดาวน์โหลด PDF</>}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Hidden PDF Render Zone */}
-                        <div id="pdf-render-zone">{isGeneratingPDF && pdfExportData.chunks[pdfExportData.currentIndex] && (<div className="pdf-page-container"><div style={{ borderBottom: '6px solid #4338ca', paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}><div><h1 style={{ fontSize: '38px', fontWeight: '900', color: '#4338ca', margin: '0' }}>รายงานรวมจ้าว</h1><p style={{ color: '#64748b', fontWeight: 'bold', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px', fontSize: '11px' }}>Consolidated Receiver Management System</p></div><div style={{ textAlign: 'right', color: '#94a3b8', fontSize: '13px', fontWeight: 'bold' }}>หน้า {pdfExportData.currentIndex + 1} / {pdfExportData.chunks.length} | {new Date().toLocaleString('th-TH')}</div></div><table className="pdf-table"><thead><tr><th>ลำดับ</th><th>ตัวเลข</th><th>ประเภท / จ้าว</th><th style={{ textAlign: 'right' }}>ราคา (บาท)</th></tr></thead><tbody>{pdfExportData.chunks[pdfExportData.currentIndex].map((item, index) => (<tr key={item.id}><td style={{ color: '#94a3b8', fontWeight: 'bold' }}>{(pdfExportData.currentIndex * 20) + index + 1}</td><td style={{ fontSize: '26px', fontWeight: 'bold', fontFamily: 'JetBrains Mono', color: '#1e293b' }}>{item.number}</td><td><div style={{ color: '#4338ca', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase' }}>{item.typeName}</div><div style={{ color: '#94a3b8', fontSize: '11px' }}>ส่ง: {item.receiverName}</div></td><td style={{ textAlign: 'right', fontSize: '22px', fontWeight: 'bold', color: '#0f172a' }}>{item.price.toLocaleString()}</td></tr>))}{pdfExportData.currentIndex === pdfExportData.chunks.length - 1 && (<tr className="pdf-total-row"><td colSpan="3" style={{ textAlign: 'right', padding: '30px 20px', fontSize: '22px', color: '#312e81', borderTop: '2px solid #4338ca' }}>ยอดรวมสุทธิทั้งสิ้น</td><td style={{ textAlign: 'right', padding: '30px 20px', fontSize: '38px', color: '#4338ca', borderTop: '2px solid #4338ca', borderBottom: '6px double #4338ca' }}>฿{totalPrice.toLocaleString()}</td></tr>)}</tbody></table></div>)}</div>
+                        {/* พื้นที่ Render PDF (ซ่อน) */}
+                        <div id="pdf-render-zone">
+                            {isGeneratingPDF && pdfExportData.chunks[pdfExportData.currentIndex] && (
+                                <div className="pdf-page-container">
+                                    <div style={{ borderBottom: '6px solid #4338ca', paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                        <div><h1 style={{ fontSize: '38px', fontWeight: '900', color: '#4338ca', margin: '0' }}>รายงานลงหวยแยกจ้าว</h1><p style={{ color: '#64748b', fontSize: '11px', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold' }}>Multi-Receiver Sync Mode &bull; Consolidated</p></div>
+                                        <div style={{ textAlign: 'right', fontSize: '12px', color: '#94a3b8', fontWeight: 'bold' }}>หน้า {pdfExportData.currentIndex + 1} / {pdfExportData.chunks.length} | {new Date().toLocaleString('th-TH')}</div>
+                                    </div>
+                                    <table className="pdf-table">
+                                        <thead><tr><th>#</th><th>ตัวเลข</th><th>ประเภท / จ้าว</th><th style={{ textAlign: 'right' }}>ราคา (บาท)</th></tr></thead>
+                                        <tbody>
+                                            {pdfExportData.chunks[pdfExportData.currentIndex].map((item, idx) => (
+                                                <tr key={item.id}>
+                                                    <td style={{ color: '#94a3b8', fontWeight: 'bold' }}>{(pdfExportData.currentIndex * 20) + idx + 1}</td>
+                                                    <td style={{ fontSize: '26px', fontWeight: 'bold', fontFamily: 'JetBrains Mono', color: '#1e293b' }}>{item.number}</td>
+                                                    <td style={{ color: '#4338ca', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>{item.typeName} ({item.receiverName})</td>
+                                                    <td style={{ textAlign: 'right', fontSize: '20px', fontWeight: 'bold', color: '#0f172a' }}>{item.price.toLocaleString()}</td>
+                                                </tr>
+                                            ))}
+                                            {pdfExportData.currentIndex === pdfExportData.chunks.length - 1 && (
+                                                <tr className="pdf-total-row">
+                                                    <td colSpan="3" style={{ textAlign: 'right', padding: '30px 20px', fontSize: '22px', color: '#312e81', borderTop: '2px solid #4338ca' }}>ยอดรวมสุทธิทั้งสิ้น</td>
+                                                    <td style={{ textAlign: 'right', padding: '30px 20px', fontSize: '38px', color: '#4338ca', borderTop: '2px solid #4338ca', borderBottom: '6px double #4338ca' }}>฿{totalPrice.toLocaleString()}</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                    <div style={{ marginTop: '50px', textAlign: 'center', fontSize: '10px', color: '#cbd5e1', letterSpacing: '5px', textTransform: 'uppercase', fontWeight: 'bold' }}>Professional MatrixSync &bull; 2026 Edition</div>
+                                </div>
+                            )}
+                        </div>
 
-                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.5em] border-t-2 border-slate-100">Multi-Receiver Sheet Sync &bull; Professional Management &bull; 2026</footer>
+                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-bold uppercase tracking-[0.5em] border-t font-bold">Smart Matrix Sync &bull; 2026 Edition</footer>
                     </div>
                 </div>
             );
