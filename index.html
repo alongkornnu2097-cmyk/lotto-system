@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบลงตัวเลขหวย - GitHub Edition</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&family=JetBrains+Mono:wght@700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; }
+        .font-mono { font-family: 'JetBrains+Mono', monospace; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+        
+        const Icon = ({ name, size = 24, className = "" }) => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
+        };
+
+        const App = () => {
+            const [entries, setEntries] = useState([]);
+            const [blockedNumbers, setBlockedNumbers] = useState(['254', '12']);
+            const [number, setNumber] = useState('');
+            const [price, setPrice] = useState('');
+            const [type, setType] = useState('3-direct');
+            const [notification, setNotification] = useState(null);
+            const [activeTab, setActiveTab] = useState('entry');
+            const [isSaving, setIsSaving] = useState(false);
+            
+            // Web App URL จากผู้ใช้
+            const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
+
+            const typeList = [
+                { id: '3-direct', label: '3 ตัวตรง' },
+                { id: '2-todd', label: '2 ตัวโต๊ด' },
+                { id: '3-permute', label: '3 ตัวกลับ' },
+                { id: '2-top', label: '2 ตัวบน' },
+                { id: '2-bottom', label: '2 ตัวล่าง' },
+                { id: 'top-float', label: 'ตัวลอยบน' },
+                { id: 'bottom-float', label: 'ตัวลอยล่าง' },
+                { id: 'pack-4', label: 'แพ 4 ตัว' },
+                { id: 'pack-5', label: 'แพ 5 ตัว' }
+            ];
+
+            const getPermutations = (str) => {
+                if (str.length <= 1) return [str];
+                const perms = [];
+                for (let i = 0; i < str.length; i++) {
+                    const char = str[i];
+                    const remainingChars = str.slice(0, i) + str.slice(i + 1);
+                    for (const p of getPermutations(remainingChars)) {
+                        perms.push(char + p);
+                    }
+                }
+                return [...new Set(perms)]; 
+            };
+
+            const showAlert = (msg, type = 'error') => {
+                setNotification({ msg, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
+
+            const handleAddEntry = (e) => {
+                e.preventDefault();
+                if (!number || !price) {
+                    showAlert('กรุณากรอกตัวเลขและราคา');
+                    return;
+                }
+                if (blockedNumbers.includes(number)) {
+                    showAlert(`เลข ${number} เป็นตัวปิดประจำงวด!`, 'error');
+                    return;
+                }
+
+                let newItems = [];
+                const currentPrice = parseFloat(price);
+
+                if (type === '3-permute') {
+                    const perms = getPermutations(number);
+                    const blockedFound = perms.find(p => blockedNumbers.includes(p));
+                    if (blockedFound) {
+                        showAlert(`ชุดกลับมีตัวปิด (${blockedFound})`, 'error');
+                        return;
+                    }
+                    newItems = perms.map(p => ({
+                        id: Math.random().toString(36).substr(2, 9),
+                        number: p,
+                        type: '3 ตัวกลับ',
+                        price: currentPrice
+                    }));
+                } else {
+                    const selectedType = typeList.find(t => t.id === type);
+                    newItems = [{
+                        id: Math.random().toString(36).substr(2, 9),
+                        number,
+                        type: selectedType ? selectedType.label : 'ทั่วไป',
+                        price: currentPrice
+                    }];
+                }
+
+                setEntries([...entries, ...newItems]);
+                setNumber('');
+                setPrice('');
+                showAlert('เพิ่มรายการแล้ว', 'success');
+            };
+
+            const saveToGoogleSheets = async () => {
+                if (entries.length === 0) return;
+                setIsSaving(true);
+                try {
+                    await fetch(sheetUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        cache: 'no-cache',
+                        body: JSON.stringify({ entries: entries })
+                    });
+                    showAlert('บันทึกลง Google Sheets สำเร็จ!', 'success');
+                    setEntries([]); 
+                } catch (error) {
+                    showAlert('เกิดข้อผิดพลาดในการเชื่อมต่อ', 'error');
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
+            const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
+
+            return (
+                <div className="min-h-screen p-4 md:p-8">
+                    <div className="max-w-4xl mx-auto shadow-2xl rounded-2xl overflow-hidden bg-white">
+                        {/* Header */}
+                        <header className="bg-indigo-700 text-white p-6 flex justify-between items-center">
+                            <div>
+                                <h1 className="text-2xl font-bold">ระบบลงหวย</h1>
+                                <p className="text-xs text-indigo-200">GitHub Pages Edition (อัปเดต 2 ตัวโต๊ด)</p>
+                            </div>
+                            <div className="flex gap-4">
+                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-lg transition-colors ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-inner' : 'hover:bg-indigo-600'}`}><Icon name="list" /></button>
+                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-lg transition-colors ${activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-inner' : 'hover:bg-indigo-600'}`}><Icon name="settings" /></button>
+                            </div>
+                        </header>
+
+                        {/* Notification */}
+                        {notification && (
+                            <div className={`fixed top-5 right-5 z-50 p-4 rounded-xl shadow-lg text-white font-bold transition-all transform animate-bounce ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
+                                <div className="flex items-center gap-2">
+                                    <Icon name={notification.type === 'error' ? 'alert-triangle' : 'check-circle'} size={20} />
+                                    {notification.msg}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'entry' ? (
+                            <div className="grid md:grid-cols-2 divide-x divide-slate-100">
+                                <div className="p-6 space-y-4">
+                                    <form onSubmit={handleAddEntry} className="space-y-4">
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                            {typeList.map(t => (
+                                                <button 
+                                                    key={t.id} 
+                                                    type="button" 
+                                                    onClick={() => setType(t.id)} 
+                                                    className={`p-2 text-[11px] rounded-lg border transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md font-bold' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300'}`}
+                                                >
+                                                    {t.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-4">
+                                            <div className="w-1/2">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ตัวเลข</label>
+                                                <input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="เลข" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                                            </div>
+                                            <div className="w-1/2">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ราคา (บาท)</label>
+                                                <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="ราคา" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                                            </div>
+                                        </div>
+                                        <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-[0.98]">
+                                            เพิ่มรายการ
+                                        </button>
+                                    </form>
+
+                                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
+                                        <div className="flex items-center gap-2 text-amber-800 font-bold mb-2">
+                                            <Icon name="alert-circle" size={16} />
+                                            <span className="text-xs">เลขปิดงวดนี้:</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {blockedNumbers.length > 0 ? (
+                                                blockedNumbers.map(n => <span key={n} className="bg-white px-2 py-1 rounded border border-amber-300 text-xs font-mono font-bold text-amber-900 shadow-sm">{n}</span>)
+                                            ) : (
+                                                <span className="text-xs text-amber-500 italic">ไม่มีเลขปิด</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-6 bg-slate-50/50 flex flex-col h-[580px]">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                            <Icon name="shopping-cart" size={18} className="text-indigo-500" />
+                                            ตะกร้าสินค้า ({entries.length})
+                                        </h3>
+                                        {entries.length > 0 && (
+                                            <button onClick={() => setEntries([])} className="text-[10px] text-red-500 font-bold hover:underline bg-red-50 px-2 py-1 rounded">ล้างทั้งหมด</button>
+                                        )}
+                                    </div>
+                                    <div className="flex-grow overflow-y-auto space-y-2 pr-1">
+                                        {entries.length === 0 ? (
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-3">
+                                                <Icon name="file-text" size={64} className="opacity-10" />
+                                                <p className="text-sm font-medium">ยังไม่มีรายการที่คีย์</p>
+                                            </div>
+                                        ) : (
+                                            entries.map(item => (
+                                                <div key={item.id} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm hover:border-indigo-300 transition-all">
+                                                    <div className="flex flex-col">
+                                                        <div className="font-mono font-bold text-lg text-slate-800 tracking-tighter">{item.number}</div>
+                                                        <div className="text-[10px] text-indigo-500 font-bold uppercase tracking-wide">{item.type}</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="font-bold text-slate-700">฿{item.price.toLocaleString()}</span>
+                                                        <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                                            <Icon name="trash-2" size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t border-slate-200">
+                                        <div className="flex justify-between font-black text-2xl mb-4 text-indigo-900">
+                                            <span className="text-lg text-slate-500 font-normal">ยอดรวมทั้งสิ้น</span>
+                                            <span>฿{totalPrice.toLocaleString()}</span>
+                                        </div>
+                                        <button 
+                                            onClick={saveToGoogleSheets} 
+                                            disabled={isSaving || entries.length === 0} 
+                                            className={`w-full py-4 rounded-xl text-white font-bold flex justify-center items-center gap-2 transition-all shadow-lg ${isSaving || entries.length === 0 ? 'bg-slate-400 cursor-not-allowed shadow-none' : 'bg-green-600 hover:bg-green-700 shadow-green-200 active:scale-[0.98]'}`}
+                                        >
+                                            {isSaving ? (
+                                                <><Icon name="loader-2" className="animate-spin" /> กำลังประมวลผล...</>
+                                            ) : (
+                                                <><Icon name="check-square" size={20} /> ส่งข้อมูลเข้า Google Sheet</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="p-8 space-y-8 max-w-2xl mx-auto">
+                                <h2 className="text-2xl font-bold text-slate-800 border-b pb-4 flex items-center gap-2">
+                                    <Icon name="settings" className="text-indigo-600" />
+                                    ตั้งค่าระบบ
+                                </h2>
+                                <div className="space-y-3">
+                                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                                        <Icon name="link" size={16} />
+                                        Web App URL ของ Google Sheets
+                                    </label>
+                                    <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="https://script.google.com/macros/s/.../exec" />
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                                        <Icon name="lock" size={16} />
+                                        จัดการเลขปิดประจำงวด
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input id="new-block" type="number" placeholder="กรอกเลขที่ต้องการปิด" className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-red-500 transition-all" />
+                                        <button onClick={() => {
+                                            const v = document.getElementById('new-block').value;
+                                            if(v) setBlockedNumbers([...blockedNumbers, v]);
+                                            document.getElementById('new-block').value = '';
+                                        }} className="bg-red-600 hover:bg-red-700 text-white px-6 rounded-xl font-bold transition-all shadow-md active:scale-95">เพิ่ม</button>
+                                    </div>
+                                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-4">
+                                        {blockedNumbers.map(n => (
+                                            <div key={n} className="bg-red-50 text-red-700 px-3 py-2 rounded-xl text-sm font-bold border border-red-100 flex justify-between items-center group animate-in fade-in zoom-in duration-200">
+                                                <span className="font-mono">{n}</span>
+                                                <button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))} className="text-red-300 hover:text-red-600 transition-colors">
+                                                    <Icon name="x-circle" size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <footer className="p-4 bg-slate-100 text-center text-[10px] text-slate-400 uppercase tracking-widest border-t border-slate-200">
+                            Professional Lotto Management System &copy; {new Date().getFullYear()}
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
