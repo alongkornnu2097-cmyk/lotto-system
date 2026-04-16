@@ -25,18 +25,21 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
         
         /* สไตล์สำหรับพื้นที่พิมพ์ PDF (ซ่อนจากหน้าจอปกติ) */
-        #pdf-report-template { 
+        #pdf-render-zone { 
             position: absolute; 
             left: -9999px; 
             top: -9999px; 
-            width: 800px; 
-            padding: 50px; 
+            width: 700px; /* ขนาดมาตรฐานสำหรับ A4 */
             background: #ffffff; 
-            color: #000000; 
         }
-        .pdf-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        .pdf-table th { background: #f1f5f9; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; }
-        .pdf-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; }
+        .pdf-page-container {
+            padding: 40px;
+            background: #ffffff;
+            color: #000000;
+        }
+        .pdf-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .pdf-table th { background: #f8fafc; padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0; font-size: 14px; }
+        .pdf-table td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
         .pdf-total-row { background: #eef2ff !important; font-weight: bold; }
     </style>
 </head>
@@ -63,6 +66,9 @@
             const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
             const [showPreview, setShowPreview] = useState(false);
             
+            // สำหรับใช้ในการ Render PDF ทีละหน้า
+            const [pdfExportData, setPdfExportData] = useState({ chunks: [], currentIndex: -1 });
+
             const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
             const typeList = [
@@ -177,36 +183,83 @@
                 }
             };
 
-            const exportPDF = async () => {
+            // ฟังก์ชันแบ่ง Chunk สำหรับ PDF
+            const chunkArray = (array, size) => {
+                const chunks = [];
+                for (let i = 0; i < array.length; i += size) {
+                    chunks.push(array.slice(i, i + size));
+                }
+                return chunks;
+            };
+
+            const startExportPDF = () => {
                 if (entries.length === 0) return;
                 setIsGeneratingPDF(true);
+                // แบ่งหน้า หน้าละ 22 รายการเพื่อให้พอดี A4 และเหลือพื้นที่หัว-ท้าย
+                const chunks = chunkArray(entries, 22);
+                setPdfExportData({ chunks, currentIndex: 0 });
+            };
+
+            // Effect เพื่อทำงาน PDF ทีละหน้าหลังจาก DOM อัปเดต
+            useEffect(() => {
+                if (isGeneratingPDF && pdfExportData.currentIndex >= 0) {
+                    processPdfPage();
+                }
+            }, [pdfExportData.currentIndex]);
+
+            const [pdfInstance, setPdfInstance] = useState(null);
+
+            const processPdfPage = async () => {
+                const { chunks, currentIndex } = pdfExportData;
+                const element = document.getElementById('pdf-render-zone');
                 
-                // หน่วงเวลาเล็กน้อยเพื่อให้ DOM เรนเดอร์ยอดสรุปให้เสร็จใน Template ที่ซ่อนอยู่
-                setTimeout(async () => {
-                    const element = document.getElementById('pdf-report-template');
-                    try {
-                        const canvas = await html2canvas(element, { 
-                            scale: 2,
-                            useCORS: true,
-                            backgroundColor: "#ffffff",
-                            logging: false
-                        });
-                        const imgData = canvas.toDataURL('image/png');
-                        const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
-                        const pdfWidth = pdf.internal.pageSize.getWidth();
-                        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-                        
-                        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-                        pdf.save(`Lotto-Report-${new Date().getTime()}.pdf`);
-                        showAlert('สร้างไฟล์ PDF สำเร็จ', 'success');
-                        setShowPreview(false);
-                    } catch (err) { 
-                        console.error(err);
-                        showAlert('เกิดข้อผิดพลาดในการสร้าง PDF'); 
-                    } finally { 
-                        setIsGeneratingPDF(false); 
+                try {
+                    // หน่วงเวลาให้ React วาดหน้าใหม่ลงใน render zone ก่อน
+                    await new Promise(r => setTimeout(r, 600));
+
+                    const canvas = await html2canvas(element, { 
+                        scale: 2,
+                        useCORS: true,
+                        backgroundColor: "#ffffff",
+                        logging: false
+                    });
+
+                    const imgData = canvas.toDataURL('image/png');
+                    let currentPdf = pdfInstance;
+
+                    if (currentIndex === 0) {
+                        currentPdf = new jspdf.jsPDF('p', 'mm', 'a4');
+                    } else {
+                        currentPdf.addPage();
                     }
-                }, 500);
+
+                    const pdfWidth = currentPdf.internal.pageSize.getWidth();
+                    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                    
+                    currentPdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+
+                    if (currentIndex < chunks.length - 1) {
+                        // ไปหน้าถัดไป
+                        setPdfInstance(currentPdf);
+                        setPdfExportData(prev => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
+                    } else {
+                        // หน้าสุดท้ายแล้ว ทำการ Save
+                        currentPdf.save(`Lotto-Report-${new Date().getTime()}.pdf`);
+                        showAlert('สร้างไฟล์ PDF สำเร็จ', 'success');
+                        resetPdfExport();
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showAlert('เกิดข้อผิดพลาดในการสร้าง PDF');
+                    resetPdfExport();
+                }
+            };
+
+            const resetPdfExport = () => {
+                setIsGeneratingPDF(false);
+                setShowPreview(false);
+                setPdfExportData({ chunks: [], currentIndex: -1 });
+                setPdfInstance(null);
             };
 
             const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
@@ -224,7 +277,7 @@
                         <header className="bg-indigo-700 text-white p-5 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold flex items-center gap-2"><Icon name="target" /> ระบบลงหวยอัจฉริยะ</h1>
-                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Smart Block & Multi-Price Sync</p>
+                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Professional Sync & PDF Reporting</p>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-md' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
@@ -352,48 +405,55 @@
                                     </div>
                                     <div className="p-4 border-t bg-white rounded-b-3xl flex flex-col md:flex-row gap-3">
                                         <button onClick={() => setShowPreview(false)} className="flex-1 py-4 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all">ยกเลิก/กลับไปแก้ไข</button>
-                                        <button onClick={exportPDF} disabled={isGeneratingPDF} className={`flex-[2] py-4 rounded-2xl text-white font-black flex justify-center items-center gap-2 transition-all shadow-xl ${isGeneratingPDF ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}>{isGeneratingPDF ? <><Icon name="loader" className="animate-spin" /> กำลังสร้าง PDF...</> : <><Icon name="download" /> ยืนยันดาวน์โหลด PDF</>}</button>
+                                        <button onClick={startExportPDF} disabled={isGeneratingPDF} className={`flex-[2] py-4 rounded-2xl text-white font-black flex justify-center items-center gap-2 transition-all shadow-xl ${isGeneratingPDF ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}>{isGeneratingPDF ? <><Icon name="loader" className="animate-spin" /> กำลังสร้าง PDF หน้าที่ {pdfExportData.currentIndex + 1}...</> : <><Icon name="download" /> ยืนยันดาวน์โหลด PDF</>}</button>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* --- Hidden Template for actual PDF Export (Enhanced) --- */}
-                        <div id="pdf-report-template">
-                            <div style={{ borderBottom: '5px solid #4338ca', paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                                <div>
-                                    <h1 style={{ fontSize: '36px', fontWeight: '900', color: '#4338ca', margin: '0' }}>สรุปรายการลงหวย</h1>
-                                    <p style={{ color: '#64748b', fontWeight: 'bold', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px' }}>Smart Lotto Management System</p>
+                        {/* --- พื้นที่สำหรับ Render PDF (จะถูกเรนเดอร์ทีละหน้า) --- */}
+                        <div id="pdf-render-zone">
+                            {isGeneratingPDF && pdfExportData.chunks[pdfExportData.currentIndex] && (
+                                <div className="pdf-page-container">
+                                    <div style={{ borderBottom: '5px solid #4338ca', paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                                        <div>
+                                            <h1 style={{ fontSize: '32px', fontWeight: '900', color: '#4338ca', margin: '0' }}>สรุปรายการลงหวย</h1>
+                                            <p style={{ color: '#64748b', fontWeight: 'bold', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px', fontSize: '10px' }}>Professional Management System</p>
+                                        </div>
+                                        <div style={{ textAlign: 'right', color: '#94a3b8', fontSize: '11px' }}>
+                                            หน้า {pdfExportData.currentIndex + 1} จาก {pdfExportData.chunks.length} | {new Date().toLocaleString('th-TH')}
+                                        </div>
+                                    </div>
+                                    <table className="pdf-table">
+                                        <thead>
+                                            <tr>
+                                                <th>ลำดับ</th><th>ตัวเลข</th><th>ประเภท</th><th style={{ textAlign: 'right' }}>ราคา (บาท)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {pdfExportData.chunks[pdfExportData.currentIndex].map((item, index) => (
+                                                <tr key={item.id}>
+                                                    <td style={{ color: '#94a3b8' }}>{(pdfExportData.currentIndex * 22) + index + 1}</td>
+                                                    <td style={{ fontSize: '20px', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }}>{item.number}</td>
+                                                    <td style={{ color: '#4338ca', fontWeight: 'bold', fontSize: '12px', textTransform: 'uppercase' }}>{item.typeName}</td>
+                                                    <td style={{ textAlign: 'right', fontSize: '18px', fontWeight: 'bold' }}>{item.price.toLocaleString()}</td>
+                                                </tr>
+                                            ))}
+                                            
+                                            {/* แสดงยอดสรุปเฉพาะหน้าสุดท้ายเท่านั้น */}
+                                            {pdfExportData.currentIndex === pdfExportData.chunks.length - 1 && (
+                                                <tr className="pdf-total-row">
+                                                    <td colSpan="3" style={{ textAlign: 'right', padding: '20px', fontSize: '18px', color: '#312e81' }}>ยอดรวมสุทธิทั้งสิ้น</td>
+                                                    <td style={{ textAlign: 'right', padding: '20px', fontSize: '28px', color: '#4338ca', borderBottom: '4px double #4338ca' }}>฿{totalPrice.toLocaleString()}</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                    <div style={{ marginTop: '30px', textAlign: 'center', color: '#cbd5e1', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '4px' }}>
+                                        Professional Edition &bull; Matrix Sync &bull; Page {pdfExportData.currentIndex + 1}
+                                    </div>
                                 </div>
-                                <div style={{ textAlign: 'right', color: '#94a3b8', fontSize: '12px' }}>
-                                    วันที่พิมพ์: {new Date().toLocaleString('th-TH')}
-                                </div>
-                            </div>
-                            <table className="pdf-table">
-                                <thead>
-                                    <tr>
-                                        <th>ลำดับ</th><th>ตัวเลข</th><th>ประเภท</th><th style={{ textAlign: 'right' }}>ราคา (บาท)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {entries.map((item, index) => (
-                                        <tr key={item.id}>
-                                            <td style={{ color: '#94a3b8' }}>{index + 1}</td>
-                                            <td style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }}>{item.number}</td>
-                                            <td style={{ color: '#4338ca', fontWeight: 'bold', fontSize: '14px' }}>{item.typeName}</td>
-                                            <td style={{ textAlign: 'right', fontSize: '20px', fontWeight: 'bold' }}>{item.price.toLocaleString()}</td>
-                                        </tr>
-                                    ))}
-                                    {/* ส่วนสรุปยอดที่ย้ายมาไว้ใน tbody เพื่อความแน่นอนในการเรนเดอร์ */}
-                                    <tr className="pdf-total-row">
-                                        <td colSpan="3" style={{ textAlign: 'right', padding: '20px', fontSize: '20px', color: '#312e81' }}>ยอดรวมสุทธิทั้งสิ้น</td>
-                                        <td style={{ textAlign: 'right', padding: '20px', fontSize: '32px', color: '#4338ca', borderBottom: '4px double #4338ca' }}>฿{totalPrice.toLocaleString()}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            <div style={{ marginTop: '50px', textAlign: 'center', color: '#cbd5e1', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '5px' }}>
-                                Professional Edition &bull; Matrix Sync &bull; Cloud Backup
-                            </div>
+                            )}
                         </div>
 
                         <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] border-t-2 border-slate-100">Smart Data Sync &bull; Professional Edition</footer>
