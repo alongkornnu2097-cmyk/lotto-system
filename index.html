@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบลงตัวเลขหวย - GitHub Edition</title>
+    <title>ระบบลงตัวเลขหวย - Professional</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & Babel -->
@@ -16,6 +16,9 @@
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&family=JetBrains+Mono:wght@700&display=swap');
         body { font-family: 'Sarabun', sans-serif; }
         .font-mono { font-family: 'JetBrains+Mono', monospace; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -24,12 +27,13 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
         
+        // Icon wrapper for Lucide in CDN environment
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => {
                 if (window.lucide) {
                     window.lucide.createIcons();
                 }
-            }, [name]);
+            }, [name, size, className]);
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
@@ -43,7 +47,7 @@
             const [activeTab, setActiveTab] = useState('entry');
             const [isSaving, setIsSaving] = useState(false);
             
-            // Web App URL จากผู้ใช้
+            // Your Pre-configured Google Web App URL
             const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
             const typeList = [
@@ -58,7 +62,9 @@
                 { id: 'pack-5', label: 'แพ 5 ตัว' }
             ];
 
+            // Permutation logic for Smart Block and Auto-Calculate
             const getPermutations = (str) => {
+                if (!str || typeof str !== 'string') return [];
                 if (str.length <= 1) return [str];
                 const perms = [];
                 for (let i = 0; i < str.length; i++) {
@@ -82,8 +88,14 @@
                     showAlert('กรุณากรอกตัวเลขและราคา');
                     return;
                 }
-                if (blockedNumbers.includes(number)) {
-                    showAlert(`เลข ${number} เป็นตัวปิดประจำงวด!`, 'error');
+
+                // --- Smart Block Logic ---
+                // Check if current input or its variants are in blocked list
+                const inputPerms = getPermutations(number);
+                const hitBlock = inputPerms.find(p => blockedNumbers.includes(p));
+
+                if (hitBlock) {
+                    showAlert(`เลขชุดนี้ติดตัวปิด: ${hitBlock}`, 'error');
                     return;
                 }
 
@@ -92,11 +104,6 @@
 
                 if (type === '3-permute') {
                     const perms = getPermutations(number);
-                    const blockedFound = perms.find(p => blockedNumbers.includes(p));
-                    if (blockedFound) {
-                        showAlert(`ชุดกลับมีตัวปิด (${blockedFound})`, 'error');
-                        return;
-                    }
                     newItems = perms.map(p => ({
                         id: Math.random().toString(36).substr(2, 9),
                         number: p,
@@ -116,13 +123,14 @@
                 setEntries([...entries, ...newItems]);
                 setNumber('');
                 setPrice('');
-                showAlert('เพิ่มรายการแล้ว', 'success');
+                showAlert('เพิ่มรายการสำเร็จ', 'success');
             };
 
             const saveToGoogleSheets = async () => {
                 if (entries.length === 0) return;
                 setIsSaving(true);
                 try {
+                    // Using no-cors as per Apps Script requirement for simple POSTs
                     await fetch(sheetUrl, {
                         method: 'POST',
                         mode: 'no-cors',
@@ -141,160 +149,173 @@
             const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
 
             return (
-                <div className="min-h-screen p-4 md:p-8">
+                <div className="min-h-screen p-2 md:p-8">
                     <div className="max-w-4xl mx-auto shadow-2xl rounded-2xl overflow-hidden bg-white">
-                        {/* Header */}
-                        <header className="bg-indigo-700 text-white p-6 flex justify-between items-center">
+                        {/* App Header */}
+                        <header className="bg-indigo-700 text-white p-5 md:p-6 flex justify-between items-center">
                             <div>
-                                <h1 className="text-2xl font-bold">ระบบลงหวย</h1>
-                                <p className="text-xs text-indigo-200">GitHub Pages Edition (อัปเดต 2 ตัวโต๊ด)</p>
+                                <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+                                    <Icon name="target" /> ระบบลงหวยอัจฉริยะ
+                                </h1>
+                                <p className="text-[10px] md:text-xs text-indigo-200 uppercase tracking-widest mt-1">Smart Block & Cloud Sync</p>
                             </div>
-                            <div className="flex gap-4">
-                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-lg transition-colors ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-inner' : 'hover:bg-indigo-600'}`}><Icon name="list" /></button>
-                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-lg transition-colors ${activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-inner' : 'hover:bg-indigo-600'}`}><Icon name="settings" /></button>
+                            <div className="flex gap-2">
+                                <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-lg' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
+                                <button onClick={() => setActiveTab('settings')} className={`p-2 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-700 shadow-lg' : 'hover:bg-indigo-600'}`}><Icon name="settings" size={20}/></button>
                             </div>
                         </header>
 
-                        {/* Notification */}
+                        {/* Notification Toast */}
                         {notification && (
-                            <div className={`fixed top-5 right-5 z-50 p-4 rounded-xl shadow-lg text-white font-bold transition-all transform animate-bounce ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
-                                <div className="flex items-center gap-2">
-                                    <Icon name={notification.type === 'error' ? 'alert-triangle' : 'check-circle'} size={20} />
-                                    {notification.msg}
-                                </div>
+                            <div className={`fixed top-4 right-4 z-50 p-4 rounded-2xl shadow-2xl text-white font-bold transition-all transform animate-bounce flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>
+                                <Icon name={notification.type === 'error' ? 'shield-alert' : 'check-circle-2'} size={24} />
+                                <span>{notification.msg}</span>
                             </div>
                         )}
 
                         {activeTab === 'entry' ? (
-                            <div className="grid md:grid-cols-2 divide-x divide-slate-100">
-                                <div className="p-6 space-y-4">
-                                    <form onSubmit={handleAddEntry} className="space-y-4">
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <div className="grid md:grid-cols-2 divide-x divide-slate-100 min-h-[500px]">
+                                {/* Form Side */}
+                                <div className="p-5 md:p-8 space-y-6">
+                                    <form onSubmit={handleAddEntry} className="space-y-5">
+                                        <div className="grid grid-cols-3 gap-2">
                                             {typeList.map(t => (
                                                 <button 
                                                     key={t.id} 
                                                     type="button" 
                                                     onClick={() => setType(t.id)} 
-                                                    className={`p-2 text-[11px] rounded-lg border transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md font-bold' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300'}`}
+                                                    className={`p-2 text-[10px] md:text-[11px] rounded-xl border-2 transition-all ${type === t.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md font-bold' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-indigo-200'}`}
                                                 >
                                                     {t.label}
                                                 </button>
                                             ))}
                                         </div>
+                                        
                                         <div className="flex gap-4">
                                             <div className="w-1/2">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ตัวเลข</label>
-                                                <input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="เลข" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ตัวเลข</label>
+                                                <input type="number" value={number} onChange={e => setNumber(e.target.value)} placeholder="000" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center" />
                                             </div>
                                             <div className="w-1/2">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ราคา (บาท)</label>
-                                                <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="ราคา" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
+                                                <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">ราคา (บาท)</label>
+                                                <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="0" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-3xl outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-center" />
                                             </div>
                                         </div>
-                                        <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg transition transform active:scale-[0.98]">
-                                            เพิ่มรายการ
+
+                                        <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all transform active:scale-[0.97] flex items-center justify-center gap-3">
+                                            <Icon name="plus" size={24} />
+                                            เพิ่มรายการลงตาราง
                                         </button>
                                     </form>
 
-                                    <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
-                                        <div className="flex items-center gap-2 text-amber-800 font-bold mb-2">
-                                            <Icon name="alert-circle" size={16} />
-                                            <span className="text-xs">เลขปิดงวดนี้:</span>
+                                    <div className="bg-rose-50 p-5 rounded-2xl border-2 border-rose-100 shadow-sm">
+                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-3">
+                                            <Icon name="lock" size={18} />
+                                            <span className="text-xs uppercase tracking-tight">รายการเลขปิด (ล็อกอัตโนมัติ):</span>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                             {blockedNumbers.length > 0 ? (
-                                                blockedNumbers.map(n => <span key={n} className="bg-white px-2 py-1 rounded border border-amber-300 text-xs font-mono font-bold text-amber-900 shadow-sm">{n}</span>)
+                                                blockedNumbers.map(n => <span key={n} className="bg-white px-3 py-1 rounded-lg border border-rose-200 text-xs font-mono font-black text-rose-600 shadow-sm">{n}</span>)
                                             ) : (
-                                                <span className="text-xs text-amber-500 italic">ไม่มีเลขปิด</span>
+                                                <span className="text-xs text-rose-400 italic">ไม่มีเลขปิดงวดนี้</span>
                                             )}
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="p-6 bg-slate-50/50 flex flex-col h-[580px]">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                {/* List Side */}
+                                <div className="p-0 bg-slate-50/30 flex flex-col h-[600px] md:h-auto">
+                                    <div className="p-6 pb-2 flex justify-between items-center">
+                                        <h3 className="font-black text-slate-800 flex items-center gap-2">
                                             <Icon name="shopping-cart" size={18} className="text-indigo-500" />
-                                            ตะกร้าสินค้า ({entries.length})
+                                            สรุปยอด ({entries.length})
                                         </h3>
                                         {entries.length > 0 && (
-                                            <button onClick={() => setEntries([])} className="text-[10px] text-red-500 font-bold hover:underline bg-red-50 px-2 py-1 rounded">ล้างทั้งหมด</button>
+                                            <button onClick={() => setEntries([])} className="text-[10px] text-rose-500 font-bold hover:bg-rose-50 px-3 py-1 rounded-full transition-colors uppercase tracking-widest border border-rose-100">Clear</button>
                                         )}
                                     </div>
-                                    <div className="flex-grow overflow-y-auto space-y-2 pr-1">
+
+                                    <div className="flex-grow overflow-y-auto space-y-2 p-6 custom-scrollbar">
                                         {entries.length === 0 ? (
-                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-3">
-                                                <Icon name="file-text" size={64} className="opacity-10" />
-                                                <p className="text-sm font-medium">ยังไม่มีรายการที่คีย์</p>
+                                            <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4 py-20">
+                                                <Icon name="box" size={80} className="opacity-10" />
+                                                <p className="text-sm font-bold uppercase tracking-widest">ว่างเปล่า</p>
                                             </div>
                                         ) : (
                                             entries.map(item => (
-                                                <div key={item.id} className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm hover:border-indigo-300 transition-all">
+                                                <div key={item.id} className="bg-white p-4 rounded-2xl border-2 border-slate-100 flex justify-between items-center shadow-sm hover:border-indigo-300 transition-all animate-in slide-in-from-right duration-300">
                                                     <div className="flex flex-col">
-                                                        <div className="font-mono font-bold text-lg text-slate-800 tracking-tighter">{item.number}</div>
-                                                        <div className="text-[10px] text-indigo-500 font-bold uppercase tracking-wide">{item.type}</div>
+                                                        <div className="font-mono font-black text-2xl text-slate-800 tracking-tighter leading-none">{item.number}</div>
+                                                        <div className="text-[9px] text-indigo-500 font-black uppercase tracking-widest mt-1">{item.type}</div>
                                                     </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="font-bold text-slate-700">฿{item.price.toLocaleString()}</span>
-                                                        <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                                                            <Icon name="trash-2" size={16} />
+                                                    <div className="flex items-center gap-5">
+                                                        <span className="font-black text-slate-700 text-lg">฿{item.price.toLocaleString()}</span>
+                                                        <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-rose-500 transition-colors">
+                                                            <Icon name="trash-2" size={20} />
                                                         </button>
                                                     </div>
                                                 </div>
                                             ))
                                         )}
                                     </div>
-                                    <div className="mt-4 pt-4 border-t border-slate-200">
-                                        <div className="flex justify-between font-black text-2xl mb-4 text-indigo-900">
-                                            <span className="text-lg text-slate-500 font-normal">ยอดรวมทั้งสิ้น</span>
-                                            <span>฿{totalPrice.toLocaleString()}</span>
+
+                                    <div className="p-6 bg-white border-t-2 border-slate-100 rounded-b-2xl">
+                                        <div className="flex justify-between items-end mb-6">
+                                            <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">ยอดรวมสุทธิ</span>
+                                            <span className="text-4xl font-black text-indigo-900 leading-none">฿{totalPrice.toLocaleString()}</span>
                                         </div>
                                         <button 
                                             onClick={saveToGoogleSheets} 
                                             disabled={isSaving || entries.length === 0} 
-                                            className={`w-full py-4 rounded-xl text-white font-bold flex justify-center items-center gap-2 transition-all shadow-lg ${isSaving || entries.length === 0 ? 'bg-slate-400 cursor-not-allowed shadow-none' : 'bg-green-600 hover:bg-green-700 shadow-green-200 active:scale-[0.98]'}`}
+                                            className={`w-full py-5 rounded-2xl text-white font-black flex justify-center items-center gap-3 transition-all shadow-2xl ${isSaving || entries.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100 active:scale-95'}`}
                                         >
                                             {isSaving ? (
-                                                <><Icon name="loader-2" className="animate-spin" /> กำลังประมวลผล...</>
+                                                <><Icon name="loader" className="animate-spin" /> กำลังซิงค์ข้อมูล...</>
                                             ) : (
-                                                <><Icon name="check-square" size={20} /> ส่งข้อมูลเข้า Google Sheet</>
+                                                <><Icon name="send" size={24} /> บันทึกลง Google Sheet</>
                                             )}
                                         </button>
                                     </div>
                                 </div>
                             </div>
                         ) : (
-                            <div className="p-8 space-y-8 max-w-2xl mx-auto">
-                                <h2 className="text-2xl font-bold text-slate-800 border-b pb-4 flex items-center gap-2">
-                                    <Icon name="settings" className="text-indigo-600" />
-                                    ตั้งค่าระบบ
+                            /* Settings Tab */
+                            <div className="p-8 space-y-10 max-w-2xl mx-auto min-h-[550px]">
+                                <h2 className="text-3xl font-black text-slate-800 border-b-4 border-indigo-100 pb-4 flex items-center gap-3">
+                                    <Icon name="settings-2" className="text-indigo-600" size={32} />
+                                    การตั้งค่า
                                 </h2>
-                                <div className="space-y-3">
-                                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
-                                        <Icon name="link" size={16} />
-                                        Web App URL ของ Google Sheets
-                                    </label>
-                                    <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="https://script.google.com/macros/s/.../exec" />
-                                </div>
+                                
                                 <div className="space-y-4">
-                                    <label className="text-sm font-bold text-slate-600 flex items-center gap-2">
-                                        <Icon name="lock" size={16} />
-                                        จัดการเลขปิดประจำงวด
+                                    <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+                                        <Icon name="link-2" size={20} className="text-emerald-500" />
+                                        Google Sheets Web App URL
                                     </label>
-                                    <div className="flex gap-2">
-                                        <input id="new-block" type="number" placeholder="กรอกเลขที่ต้องการปิด" className="flex-grow p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-red-500 transition-all" />
-                                        <button onClick={() => {
-                                            const v = document.getElementById('new-block').value;
-                                            if(v) setBlockedNumbers([...blockedNumbers, v]);
-                                            document.getElementById('new-block').value = '';
-                                        }} className="bg-red-600 hover:bg-red-700 text-white px-6 rounded-xl font-bold transition-all shadow-md active:scale-95">เพิ่ม</button>
+                                    <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" />
+                                </div>
+
+                                <div className="space-y-5 pt-6">
+                                    <div>
+                                        <label className="text-sm font-black text-slate-500 flex items-center gap-2 uppercase tracking-widest">
+                                            <Icon name="shield-off" size={20} className="text-rose-500" />
+                                            ระบบเลขปิดอัจฉริยะ
+                                        </label>
+                                        <p className="text-[10px] text-slate-400 mt-2 font-bold">* ใส่เพียงเลขเดียว ระบบจะล็อกชุดสลับ (Permutations) ทั้งหมดให้อัตโนมัติ</p>
                                     </div>
-                                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-4">
+                                    <div className="flex gap-3">
+                                        <input id="new-block-input" type="number" placeholder="กรอกเลขที่ต้องการปิด" className="flex-grow p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-rose-500/10 font-mono text-xl" />
+                                        <button onClick={() => {
+                                            const v = document.getElementById('new-block-input').value;
+                                            if(v) setBlockedNumbers([...blockedNumbers, v]);
+                                            document.getElementById('new-block-input').value = '';
+                                        }} className="bg-rose-600 hover:bg-rose-700 text-white px-8 rounded-2xl font-black transition-all shadow-lg active:scale-95">เพิ่ม</button>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
                                         {blockedNumbers.map(n => (
-                                            <div key={n} className="bg-red-50 text-red-700 px-3 py-2 rounded-xl text-sm font-bold border border-red-100 flex justify-between items-center group animate-in fade-in zoom-in duration-200">
-                                                <span className="font-mono">{n}</span>
-                                                <button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))} className="text-red-300 hover:text-red-600 transition-colors">
-                                                    <Icon name="x-circle" size={14} />
+                                            <div key={n} className="bg-white text-rose-600 px-4 py-3 rounded-2xl font-black border-2 border-rose-50 flex justify-between items-center group shadow-sm transition-all hover:border-rose-200">
+                                                <span className="font-mono text-xl tracking-tighter">{n}</span>
+                                                <button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))} className="text-slate-300 hover:text-rose-600 transition-colors">
+                                                    <Icon name="x-circle" size={18} />
                                                 </button>
                                             </div>
                                         ))}
@@ -302,8 +323,8 @@
                                 </div>
                             </div>
                         )}
-                        <footer className="p-4 bg-slate-100 text-center text-[10px] text-slate-400 uppercase tracking-widest border-t border-slate-200">
-                            Professional Lotto Management System &copy; {new Date().getFullYear()}
+                        <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] border-t-2 border-slate-100">
+                            Professional Lotto Management &bull; Cloud Edition &bull; 2026
                         </footer>
                     </div>
                 </div>
