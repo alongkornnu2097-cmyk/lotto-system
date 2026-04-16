@@ -30,10 +30,14 @@
             left: -9999px; 
             top: -9999px; 
             width: 800px; 
-            padding: 40px; 
-            background: white; 
-            color: black; 
+            padding: 50px; 
+            background: #ffffff; 
+            color: #000000; 
         }
+        .pdf-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .pdf-table th { background: #f1f5f9; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; }
+        .pdf-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; }
+        .pdf-total-row { background: #eef2ff !important; font-weight: bold; }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -57,7 +61,7 @@
             const [activeTab, setActiveTab] = useState('entry');
             const [isSaving, setIsSaving] = useState(false);
             const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-            const [showPreview, setShowPreview] = useState(false); // State สำหรับเปิดหน้าพรีวิว
+            const [showPreview, setShowPreview] = useState(false);
             
             const [sheetUrl, setSheetUrl] = useState('https://script.google.com/macros/s/AKfycbxmTp_gZ7iJf8ixFNRVxnNr8yoPI2f6flxZ71hUZdwSbfcZb8KUvpViB8GvySHxIKRN/exec');
 
@@ -176,25 +180,43 @@
             const exportPDF = async () => {
                 if (entries.length === 0) return;
                 setIsGeneratingPDF(true);
-                const element = document.getElementById('pdf-report-template');
-                try {
-                    const canvas = await html2canvas(element, { scale: 2 });
-                    const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jspdf.jsPDF();
-                    const pdfWidth = pdf.internal.pageSize.getWidth();
-                    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-                    pdf.save(`Lotto-Report-${new Date().getTime()}.pdf`);
-                    showAlert('สร้างไฟล์ PDF สำเร็จ', 'success');
-                    setShowPreview(false); // ปิดพรีวิวหลังโหลดเสร็จ
-                } catch (err) { 
-                    showAlert('เกิดข้อผิดพลาดในการสร้าง PDF'); 
-                } finally { 
-                    setIsGeneratingPDF(false); 
-                }
+                
+                // หน่วงเวลาเล็กน้อยเพื่อให้ DOM เรนเดอร์ยอดสรุปให้เสร็จใน Template ที่ซ่อนอยู่
+                setTimeout(async () => {
+                    const element = document.getElementById('pdf-report-template');
+                    try {
+                        const canvas = await html2canvas(element, { 
+                            scale: 2,
+                            useCORS: true,
+                            backgroundColor: "#ffffff",
+                            logging: false
+                        });
+                        const imgData = canvas.toDataURL('image/png');
+                        const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+                        const pdfWidth = pdf.internal.pageSize.getWidth();
+                        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+                        
+                        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                        pdf.save(`Lotto-Report-${new Date().getTime()}.pdf`);
+                        showAlert('สร้างไฟล์ PDF สำเร็จ', 'success');
+                        setShowPreview(false);
+                    } catch (err) { 
+                        console.error(err);
+                        showAlert('เกิดข้อผิดพลาดในการสร้าง PDF'); 
+                    } finally { 
+                        setIsGeneratingPDF(false); 
+                    }
+                }, 500);
             };
 
             const totalPrice = useMemo(() => entries.reduce((sum, item) => sum + item.price, 0), [entries]);
+
+            const clearBlockedNumbers = () => {
+                if (window.confirm('คุณต้องการล้างรายการเลขปิดทั้งหมดของงวดนี้ใช่หรือไม่?')) {
+                    setBlockedNumbers([]);
+                    showAlert('ล้างรายการเลขปิดแล้ว', 'success');
+                }
+            };
 
             return (
                 <div className="min-h-screen p-2 md:p-8">
@@ -202,7 +224,7 @@
                         <header className="bg-indigo-700 text-white p-5 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold flex items-center gap-2"><Icon name="target" /> ระบบลงหวยอัจฉริยะ</h1>
-                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Matrix Expansion & Multi-Price</p>
+                                <p className="text-[10px] text-indigo-200 uppercase tracking-widest mt-1">Smart Block & Multi-Price Sync</p>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => setActiveTab('entry')} className={`p-2 rounded-xl transition-all ${activeTab === 'entry' ? 'bg-white text-indigo-700 shadow-md' : 'hover:bg-indigo-600'}`}><Icon name="list" size={20}/></button>
@@ -242,7 +264,7 @@
                                     </form>
 
                                     <div className="bg-rose-50 p-4 rounded-xl border-2 border-rose-100 shadow-sm">
-                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-2"><Icon name="lock" size={16} /><span className="text-xs uppercase">เลขปิดงวดนี้ (ล็อกชุดกลับ):</span></div>
+                                        <div className="flex items-center gap-2 text-rose-800 font-bold mb-2"><Icon name="lock" size={16} /><span className="text-xs uppercase">เลขปิดงวดนี้:</span></div>
                                         <div className="flex flex-wrap gap-2">
                                             {blockedNumbers.length > 0 ? (
                                                 blockedNumbers.map(n => <span key={n} className="bg-white px-3 py-1 rounded-lg border border-rose-200 text-xs font-mono font-black text-rose-600 shadow-sm">{n}</span>)
@@ -279,13 +301,7 @@
                                     <div className="p-6 bg-white border-t-2 border-slate-100 space-y-3">
                                         <div className="flex justify-between items-end"><span className="text-xs text-slate-400 font-bold uppercase">ยอดรวม</span><span className="text-3xl font-black text-indigo-900 leading-none">฿{totalPrice.toLocaleString()}</span></div>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <button 
-                                                onClick={() => setShowPreview(true)} 
-                                                disabled={entries.length === 0}
-                                                className="py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 shadow-sm transition-all active:scale-95 disabled:opacity-30"
-                                            >
-                                                <Icon name="eye" size={18} /> ดูตัวอย่าง PDF
-                                            </button>
+                                            <button onClick={() => setShowPreview(true)} disabled={entries.length === 0} className="py-3 rounded-xl font-bold flex justify-center items-center gap-2 border-2 border-indigo-600 text-indigo-700 hover:bg-indigo-50 shadow-sm transition-all active:scale-95 disabled:opacity-30"><Icon name="eye" size={18} /> ดูตัวอย่าง PDF</button>
                                             <button onClick={saveToGoogleSheets} disabled={isSaving || entries.length === 0} className="py-3 rounded-xl text-white font-bold flex justify-center items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all shadow-lg shadow-emerald-100 disabled:opacity-30"><Icon name="send" /> ส่งข้อมูล</button>
                                         </div>
                                     </div>
@@ -299,7 +315,7 @@
                                     <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all" />
                                 </div>
                                 <div className="space-y-5 pt-6">
-                                    <div className="flex justify-between items-end"><label className="text-sm font-black text-slate-500 uppercase tracking-widest block">จัดการเลขปิด (ประจำงวด)</label><button onClick={() => setBlockedNumbers([])} className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50">ล้างทั้งหมด</button></div>
+                                    <div className="flex justify-between items-end"><label className="text-sm font-black text-slate-500 uppercase tracking-widest block">จัดการเลขปิด (ประจำงวด)</label><button onClick={clearBlockedNumbers} className="text-[10px] font-black text-rose-600 border border-rose-200 px-3 py-1 rounded-lg hover:bg-rose-50">ล้างทั้งหมด</button></div>
                                     <div className="flex gap-3"><input id="new-block-input" type="number" placeholder="กรอกเลขปิด" className="flex-grow p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xl outline-none focus:border-rose-300" /><button onClick={() => { const v = document.getElementById('new-block-input').value; if(v) setBlockedNumbers([...blockedNumbers, v]); document.getElementById('new-block-input').value = ''; }} className="bg-rose-600 text-white px-8 rounded-2xl font-black transition-all shadow-lg active:scale-95">เพิ่ม</button></div>
                                     <div className="grid grid-cols-4 gap-3">{blockedNumbers.map(n => <div key={n} className="bg-white text-rose-600 p-3 rounded-xl font-black border-2 border-rose-50 flex justify-between items-center shadow-sm"><span>{n}</span><button onClick={() => setBlockedNumbers(blockedNumbers.filter(x => x !== n))}><Icon name="x-circle" size={14} /></button></div>)}</div>
                                 </div>
@@ -310,116 +326,74 @@
                         {showPreview && (
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all overflow-y-auto">
                                 <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh]">
-                                    {/* Modal Header */}
                                     <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-3xl">
-                                        <h2 className="font-black text-slate-700 flex items-center gap-2">
-                                            <Icon name="eye" size={20} className="text-indigo-600" /> ตรวจสอบตัวอย่างรายงาน
-                                        </h2>
-                                        <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
-                                            <Icon name="x" size={24} />
-                                        </button>
+                                        <h2 className="font-black text-slate-700 flex items-center gap-2"><Icon name="eye" size={20} className="text-indigo-600" /> ตรวจสอบตัวอย่างรายงาน</h2>
+                                        <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><Icon name="x" size={24} /></button>
                                     </div>
-                                    
-                                    {/* Modal Content (The actual preview) */}
                                     <div className="flex-grow overflow-y-auto p-4 md:p-10 bg-slate-100">
-                                        <div className="bg-white p-6 md:p-12 shadow-sm rounded-lg mx-auto max-w-[800px] pointer-events-none select-none border border-slate-200">
+                                        <div className="bg-white p-6 md:p-12 shadow-sm rounded-lg mx-auto max-w-[800px] border border-slate-200">
                                             <div className="border-b-4 border-indigo-700 pb-4 mb-6 flex justify-between items-end">
-                                                <div>
-                                                    <h1 className="text-3xl font-black text-indigo-700 leading-tight">สรุปรายการลงหวย</h1>
-                                                    <p className="text-slate-500 font-bold tracking-widest uppercase text-[10px]">Smart Lotto Management &bull; Matrix Expansion</p>
-                                                </div>
-                                                <div className="text-right text-slate-400 font-bold uppercase text-[10px]">
-                                                    พิมพ์เมื่อ: {new Date().toLocaleString('th-TH')}
-                                                </div>
+                                                <div><h1 className="text-3xl font-black text-indigo-700 leading-tight">สรุปรายการลงหวย</h1><p className="text-slate-500 font-bold tracking-widest uppercase text-[10px]">Matrix Expansion & Multi-Price Mode</p></div>
+                                                <div className="text-right text-slate-400 font-bold uppercase text-[10px]">พิมพ์เมื่อ: {new Date().toLocaleString('th-TH')}</div>
                                             </div>
                                             <table className="w-full mb-10 text-sm">
-                                                <thead>
-                                                    <tr className="bg-slate-100">
-                                                        <th className="p-3 text-left font-black text-slate-600">ลำดับ</th>
-                                                        <th className="p-3 text-left font-black text-slate-600">ตัวเลข</th>
-                                                        <th className="p-3 text-left font-black text-slate-600">ประเภท</th>
-                                                        <th className="p-3 text-right font-black text-slate-600">ราคา (บาท)</th>
-                                                    </tr>
-                                                </thead>
+                                                <thead><tr className="bg-slate-100"><th className="p-3 text-left">ลำดับ</th><th className="p-3 text-left">ตัวเลข</th><th className="p-3 text-left">ประเภท</th><th className="p-3 text-right">ราคา</th></tr></thead>
                                                 <tbody>
                                                     {entries.map((item, index) => (
-                                                        <tr key={item.id} className="border-b border-slate-50">
-                                                            <td className="p-3 text-slate-400 font-bold">{index + 1}</td>
-                                                            <td className="p-3 font-mono font-black text-xl text-slate-800">{item.number}</td>
-                                                            <td className="p-3 text-indigo-600 font-black text-[10px] uppercase">{item.typeName}</td>
-                                                            <td className="p-3 text-right font-black text-lg text-slate-700">฿{item.price.toLocaleString()}</td>
-                                                        </tr>
+                                                        <tr key={item.id} className="border-b border-slate-50"><td className="p-3 text-slate-400">{index + 1}</td><td className="p-3 font-mono font-black text-xl">{item.number}</td><td className="p-3 text-indigo-600 text-[10px] uppercase font-bold">{item.typeName}</td><td className="p-3 text-right font-black text-lg">฿{item.price.toLocaleString()}</td></tr>
                                                     ))}
-                                                </tbody>
-                                                <tfoot>
-                                                    <tr className="bg-indigo-50/50">
-                                                        <td colSpan="3" className="p-6 text-right font-black text-xl uppercase text-indigo-900">รวมยอดสุทธิทั้งสิ้น</td>
-                                                        <td className="p-6 text-right font-black text-3xl text-indigo-700 underline decoration-double">฿{totalPrice.toLocaleString()}</td>
+                                                    <tr className="bg-indigo-50 font-black">
+                                                        <td colSpan="3" className="p-4 text-right text-indigo-900 text-lg uppercase">รวมยอดสุทธิทั้งสิ้น</td>
+                                                        <td className="p-4 text-right text-indigo-700 text-2xl underline decoration-double">฿{totalPrice.toLocaleString()}</td>
                                                     </tr>
-                                                </tfoot>
+                                                </tbody>
                                             </table>
-                                            <div className="text-center text-slate-300 font-black uppercase tracking-[0.4em] text-[8px] pt-8 border-t border-slate-100">
-                                                Professional Edition &bull; Generated via Cloud System
-                                            </div>
                                         </div>
                                     </div>
-
-                                    {/* Modal Footer (Controls) */}
                                     <div className="p-4 border-t bg-white rounded-b-3xl flex flex-col md:flex-row gap-3">
-                                        <button 
-                                            onClick={() => setShowPreview(false)}
-                                            className="flex-1 py-4 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all"
-                                        >
-                                            ยกเลิก/กลับไปแก้ไข
-                                        </button>
-                                        <button 
-                                            onClick={exportPDF}
-                                            disabled={isGeneratingPDF}
-                                            className={`flex-[2] py-4 rounded-2xl text-white font-black flex justify-center items-center gap-2 transition-all shadow-xl ${isGeneratingPDF ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100 active:scale-95'}`}
-                                        >
-                                            {isGeneratingPDF ? (
-                                                <><Icon name="loader" className="animate-spin" /> กำลังสร้างไฟล์ PDF...</>
-                                            ) : (
-                                                <><Icon name="download" /> ยืนยันดาวน์โหลด PDF</>
-                                            )}
-                                        </button>
+                                        <button onClick={() => setShowPreview(false)} className="flex-1 py-4 font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all">ยกเลิก/กลับไปแก้ไข</button>
+                                        <button onClick={exportPDF} disabled={isGeneratingPDF} className={`flex-[2] py-4 rounded-2xl text-white font-black flex justify-center items-center gap-2 transition-all shadow-xl ${isGeneratingPDF ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}>{isGeneratingPDF ? <><Icon name="loader" className="animate-spin" /> กำลังสร้าง PDF...</> : <><Icon name="download" /> ยืนยันดาวน์โหลด PDF</>}</button>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* --- Hidden Template for actual PDF Export --- */}
+                        {/* --- Hidden Template for actual PDF Export (Enhanced) --- */}
                         <div id="pdf-report-template">
-                            <div className="border-b-4 border-indigo-700 pb-4 mb-6 flex justify-between items-end">
+                            <div style={{ borderBottom: '5px solid #4338ca', paddingBottom: '15px', marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                 <div>
-                                    <h1 className="text-4xl font-black text-indigo-700">สรุปรายการหวย</h1>
-                                    <p className="text-slate-500 font-bold tracking-widest uppercase text-sm">Matrix Expansion & Multi-Price Mode</p>
+                                    <h1 style={{ fontSize: '36px', fontWeight: '900', color: '#4338ca', margin: '0' }}>สรุปรายการลงหวย</h1>
+                                    <p style={{ color: '#64748b', fontWeight: 'bold', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '2px' }}>Smart Lotto Management System</p>
                                 </div>
-                                <div className="text-right text-slate-400 font-bold uppercase text-xs">Date: {new Date().toLocaleString('th-TH')}</div>
+                                <div style={{ textAlign: 'right', color: '#94a3b8', fontSize: '12px' }}>
+                                    วันที่พิมพ์: {new Date().toLocaleString('th-TH')}
+                                </div>
                             </div>
-                            <table className="w-full mb-10 text-lg">
+                            <table className="pdf-table">
                                 <thead>
-                                    <tr className="bg-slate-100">
-                                        <th className="p-4 text-left font-black text-slate-600">ลำดับ</th><th className="p-4 text-left font-black text-slate-600">ตัวเลข</th><th className="p-4 text-left font-black text-slate-600">ประเภท</th><th className="p-4 text-right font-black text-slate-600">ราคา</th>
+                                    <tr>
+                                        <th>ลำดับ</th><th>ตัวเลข</th><th>ประเภท</th><th style={{ textAlign: 'right' }}>ราคา (บาท)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {entries.map((item, index) => (
-                                        <tr key={item.id} className="border-b border-slate-50">
-                                            <td className="p-4 text-slate-400 font-bold">{index + 1}</td>
-                                            <td className="p-4 font-mono font-black text-xl text-slate-800">{item.number}</td>
-                                            <td className="p-4 text-indigo-600 font-black text-xs uppercase">{item.typeName}</td>
-                                            <td className="p-4 text-right font-black text-xl text-slate-700">฿{item.price.toLocaleString()}</td>
+                                        <tr key={item.id}>
+                                            <td style={{ color: '#94a3b8' }}>{index + 1}</td>
+                                            <td style={{ fontSize: '24px', fontWeight: 'bold', fontFamily: 'JetBrains Mono' }}>{item.number}</td>
+                                            <td style={{ color: '#4338ca', fontWeight: 'bold', fontSize: '14px' }}>{item.typeName}</td>
+                                            <td style={{ textAlign: 'right', fontSize: '20px', fontWeight: 'bold' }}>{item.price.toLocaleString()}</td>
                                         </tr>
                                     ))}
-                                </tbody>
-                                <tfoot>
-                                    <tr className="bg-indigo-50/50">
-                                        <td colSpan="3" className="p-6 text-right font-black text-2xl uppercase text-indigo-900">รวมยอดสุทธิทั้งสิ้น</td>
-                                        <td className="p-6 text-right font-black text-4xl text-indigo-700">฿{totalPrice.toLocaleString()}</td>
+                                    {/* ส่วนสรุปยอดที่ย้ายมาไว้ใน tbody เพื่อความแน่นอนในการเรนเดอร์ */}
+                                    <tr className="pdf-total-row">
+                                        <td colSpan="3" style={{ textAlign: 'right', padding: '20px', fontSize: '20px', color: '#312e81' }}>ยอดรวมสุทธิทั้งสิ้น</td>
+                                        <td style={{ textAlign: 'right', padding: '20px', fontSize: '32px', color: '#4338ca', borderBottom: '4px double #4338ca' }}>฿{totalPrice.toLocaleString()}</td>
                                     </tr>
-                                </tfoot>
+                                </tbody>
                             </table>
+                            <div style={{ marginTop: '50px', textAlign: 'center', color: '#cbd5e1', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '5px' }}>
+                                Professional Edition &bull; Matrix Sync &bull; Cloud Backup
+                            </div>
                         </div>
 
                         <footer className="p-6 bg-slate-50 text-center text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] border-t-2 border-slate-100">Smart Data Sync &bull; Professional Edition</footer>
