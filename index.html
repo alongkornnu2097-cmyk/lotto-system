@@ -103,8 +103,8 @@
                 return [...new Set(perms)]; 
             };
 
-            const showAlert = (msg, type = 'error') => {
-                setNotification({ msg, type });
+            const showAlert = (msg, alertType = 'error') => {
+                setNotification({ msg, type: alertType });
                 setTimeout(() => setNotification(null), 3000);
             };
 
@@ -156,7 +156,19 @@
                         };
                     });
                 } else {
-                    const totalInputPrice = priceParts.reduce((acc, curr) => acc + (parseFloat(curr) || 0), 0);
+                    // ปรับแก้ไขตามเงื่อนไข: 
+                    // ถ้าตัวหลังน้อยกว่า 10 (เช่น *6) ให้เอามาคูณ (จำนวนประตู)
+                    // ถ้าตัวหลังตั้งแต่ 10 ขึ้นไป (เช่น *50) ให้เอามาบวก (ตรง + โต๊ด)
+                    let totalInputPrice = parseFloat(priceParts[0]) || 0;
+                    if (priceParts.length > 1) {
+                        const p2 = parseFloat(priceParts[1]) || 0;
+                        if (p2 < 10) {
+                            totalInputPrice = totalInputPrice * p2;
+                        } else {
+                            totalInputPrice = totalInputPrice + p2;
+                        }
+                    }
+
                     const formattedDetails = `${number}=${price}`;
 
                     newItems = [{
