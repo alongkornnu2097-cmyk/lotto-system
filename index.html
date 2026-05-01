@@ -45,19 +45,78 @@
 <body class="bg-slate-50">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
         const { useState, useMemo, useEffect } = React;
         
+        // Initialize Firebase OUTSIDE component
+        let app, auth, db, appId;
+        if (typeof __firebase_config !== 'undefined') {
+            const firebaseConfig = JSON.parse(__firebase_config);
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        }
+
         const Icon = ({ name, size = 24, className = "" }) => {
             useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [name, size, className]);
             return <i data-lucide={name} style={{ width: size, height: size }} className={className}></i>;
         };
 
         const App = () => {
+            const [user, setUser] = useState(null);
+
+            // 1. Setup Auth
+            useEffect(() => {
+                if (!auth) return;
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                initAuth();
+                const unsubscribe = onAuthStateChanged(auth, setUser);
+                return () => unsubscribe();
+            }, []);
+
             const [receivers, setReceivers] = useState([
                 { id: 'r1', name: 'พี่อ้อม', blockedNumbers: [] },
                 { id: 'r2', name: 'น้าไก่', blockedNumbers: [] }
             ]);
+
+            // 2. Fetch data from Firestore
+            useEffect(() => {
+                if (!user || !db) return;
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'receiversData');
+                
+                const unsubscribe = onSnapshot(docRef, (snapshot) => {
+                    if (snapshot.exists()) {
+                        setReceivers(snapshot.data().list);
+                    }
+                }, (error) => {
+                    console.error("Firestore read error:", error);
+                });
+
+                return () => unsubscribe();
+            }, [user]);
+
+            const updateReceiversInDB = async (newList) => {
+                setReceivers(newList);
+                if (!user || !db) return;
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'receiversData');
+                try {
+                    await setDoc(docRef, { list: newList });
+                } catch (error) {
+                    console.error("Firestore write error:", error);
+                }
+            };
+
             const [activeReceiverId, setActiveReceiverId] = useState('r1');
             const [entries, setEntries] = useState([]);
             const [number, setNumber] = useState('');
@@ -190,13 +249,14 @@
             const addBlockedNumberSmart = (rid, val) => {
                 if (!val) return;
                 const perms = getPermutations(val);
-                setReceivers(receivers.map(r => {
+                const newList = receivers.map(r => {
                     if (r.id === rid) {
                         const updatedBlocks = [...new Set([...r.blockedNumbers, ...perms])];
                         return { ...r, blockedNumbers: updatedBlocks };
                     }
                     return r;
-                }));
+                });
+                updateReceiversInDB(newList);
                 showAlert(`ล็อกเลข ${val} และเลขสลับตำแหน่งให้ [${receivers.find(x => x.id === rid).name}] แล้ว`, 'success');
             };
 
@@ -330,7 +390,7 @@
             const addReceiver = () => {
                 const name = prompt('กรุณาระบุชื่อจ้าวใหม่:');
                 if (name) {
-                    setReceivers([...receivers, { id: 'r' + Date.now(), name, blockedNumbers: [] }]);
+                    updateReceiversInDB([...receivers, { id: 'r' + Date.now(), name, blockedNumbers: [] }]);
                 }
             };
 
@@ -585,7 +645,7 @@
                                                     <div key={r.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
                                                         <div className="flex justify-between items-center mb-4">
                                                             <span className="text-lg font-bold text-slate-800">{r.name}</span>
-                                                            <button onClick={() => receivers.length > 1 && setReceivers(receivers.filter(x => x.id !== r.id))} className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-400 flex items-center justify-center hover:text-rose-500 hover:border-rose-200 transition-colors">
+                                                            <button onClick={() => receivers.length > 1 && updateReceiversInDB(receivers.filter(x => x.id !== r.id))} className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-400 flex items-center justify-center hover:text-rose-500 hover:border-rose-200 transition-colors">
                                                                 <Icon name="trash-2" size={14}/>
                                                             </button>
                                                         </div>
@@ -604,7 +664,7 @@
                                                                     {r.blockedNumbers.map(num => (
                                                                         <div key={num} className="bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-mono text-xs flex items-center gap-2 group hover:border-rose-200 transition-colors">
                                                                             {num}
-                                                                            <button onClick={() => setReceivers(receivers.map(x => x.id === r.id ? {...x, blockedNumbers: x.blockedNumbers.filter(z => z !== num)} : x))} className="text-slate-300 group-hover:text-rose-500">
+                                                                            <button onClick={() => updateReceiversInDB(receivers.map(x => x.id === r.id ? {...x, blockedNumbers: x.blockedNumbers.filter(z => z !== num)} : x))} className="text-slate-300 group-hover:text-rose-500">
                                                                                 <Icon name="x" size={14}/>
                                                                             </button>
                                                                         </div>
