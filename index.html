@@ -346,78 +346,119 @@ const customFirebaseConfig = {    // <--- เปลี่ยนชื่อต�
                 }
             };
 
-            const handleAddEntry = (e) => {
-                e.preventDefault();
-                if (!number || !price) { showAlert('กรุณากรอกตัวเลขและราคา'); return; }
+const handleAddEntry = (e) => {
+    e.preventDefault();
+    if (!number || !price) { showAlert('กรุณากรอกตัวเลขและราคา'); return; }
 
-                const perms = getPermutations(number);
-                const hitBlock = perms.find(p => activeReceiver.blockedNumbers.includes(p));
-                
-                if (hitBlock) {
-                    showAlert(`เลขชุดนี้ติดเลขปิดของ [${activeReceiver.name}]: ${hitBlock}`, 'error');
-                    return;
-                }
+    const perms = getPermutations(number);
+    const hitBlock = perms.find(p => activeReceiver.blockedNumbers.includes(p));
+    
+    if (hitBlock) {
+        showAlert(`เลขชุดนี้ติดเลขปิดของ [${activeReceiver.name}]: ${hitBlock}`, 'error');
+        return;
+    }
 
-                const priceParts = price.toLowerCase().split(/[x*]/);
-                const isPermuteType = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
+    const priceParts = price.toLowerCase().split(/[x*]/);
+    const isPermuteType = ['3-permute', '2-top-permute', '2-bottom-permute'].includes(type);
+    const selectedType = typeList.find(t => t.id === type) || { label: 'ทั่วไป' };
 
-                let newItems = [];
-                const selectedType = typeList.find(t => t.id === type) || { label: 'ทั่วไป' };
+    // ฟังก์ชันหักตัวแถม 10% ออก เพื่อหาต้นทุนจริง (เช่น 110 -> 100, 55 -> 50)
+    const getBasePrice = (valStr) => {
+        const num = parseFloat(valStr) || 0;
+        if (num > 0 && num % 11 === 0) {
+            return Math.round(num / 1.1);
+        }
+        return num;
+    };
 
-                if (isPermuteType) {
-                    const p1 = parseFloat(priceParts[0]);
-                    const p2 = priceParts.length > 1 ? parseFloat(priceParts[1]) : p1;
-                    let mainPrice, subPrice;
-                    
-                    if (priceParts.length > 1 && p2 === perms.length) {
-                        mainPrice = p1; subPrice = p1;
-                    } else {
-                        mainPrice = p1; subPrice = p2;
-                    }
+    let newItems = [];
 
-                    newItems = perms.map(p => {
-                        const itemPrice = (p === number) ? mainPrice : subPrice;
-                        const itemDisplay = `${p}=${itemPrice}`;
-                        return {
-                            id: Math.random().toString(36).substr(2, 9),
-                            number: p,
-                            typeId: type,
-                            typeName: selectedType.label,
-                            displayValue: itemDisplay,
-                            price: itemPrice,
-                            isPrimary: p === number,
-                            receiverName: activeReceiver.name,
-                            details: itemDisplay
-                        };
-                    });
-                } else {
-                    let totalInputPrice = parseFloat(priceParts[0]) || 0;
-                    if (priceParts.length > 1) {
-                        const p2 = parseFloat(priceParts[1]) || 0;
-                        if (p2 < 10) { totalInputPrice = totalInputPrice * p2; } 
-                        else { totalInputPrice = totalInputPrice + p2; }
-                    }
+    if (isPermuteType) {
+        // โหมดกระจายตัวเลข (เมื่อเลือก 3 ตัวกลับ หรือ 2 ตัวกลับ)
+        const p1Input = parseFloat(priceParts[0]);
+        const p2Input = priceParts.length > 1 ? parseFloat(priceParts[1]) : p1Input;
+        
+        const p1Base = getBasePrice(priceParts[0]);
+        const p2Base = getBasePrice(priceParts[1] !== undefined ? priceParts[1] : priceParts[0]);
 
-                    const formattedDetails = `${number}=${price}`;
+        let mainPrice = p1Base;
+        let subPrice = p2Base;
+        let mainDisplay = p1Input;
+        let subDisplay = p2Input;
+        
+        // กรณีพิเศษ: ใส่ราคามา 2 ก้อน แต่ก้อนหลังคือจำนวนประตู (เช่น 100*6)
+        if (priceParts.length === 2 && p2Input === perms.length) {
+            subPrice = p1Base;
+            subDisplay = p1Input;
+        }
 
-                    newItems = [{
-                        id: Math.random().toString(36).substr(2, 9),
-                        number,
-                        typeId: type,
-                        typeName: selectedType.label,
-                        displayValue: formattedDetails,
-                        price: totalInputPrice,
-                        isPrimary: true,
-                        receiverName: activeReceiver.name,
-                        details: formattedDetails
-                    }];
-                }
-
-                updateEntriesInDB([...entries, ...newItems]);
-                setNumber('');
-                setPrice('');
-                showAlert(`เพิ่มรายการให้ [${activeReceiver.name}] เรียบร้อย`, 'success');
+        newItems = perms.map(p => {
+            const isMain = (p === number);
+            const itemPrice = isMain ? mainPrice : subPrice;
+            const itemDisplayVal = isMain ? mainDisplay : subDisplay;
+            const itemDisplay = `${p}=${itemDisplayVal}`;
+            return {
+                id: Math.random().toString(36).substr(2, 9),
+                number: p,
+                typeId: type,
+                typeName: selectedType.label,
+                displayValue: itemDisplay,
+                originalPrice: itemDisplayVal.toString(),
+                price: itemPrice, 
+                isPrimary: isMain,
+                receiverName: activeReceiver.name,
+                details: itemDisplay
             };
+        });
+    } else {
+        // โหมดพิมพ์รวบยอด ไม่กระจายตัวเลข (เช่น 3 ตัวตรง พิมพ์ 110*55*5)
+        let totalInputPrice = 0;
+        
+        if (priceParts.length === 1) {
+            totalInputPrice = getBasePrice(priceParts[0]);
+        } else if (priceParts.length === 2) {
+            const p1 = getBasePrice(priceParts[0]);
+            const p2 = getBasePrice(priceParts[1]);
+            
+            if (p2 < 10) {
+                totalInputPrice = p1 * p2; // เช่น 100*5 = 500
+            } else {
+                totalInputPrice = p1 + p2; // เช่น 100*100 = 200
+            }
+        } else if (priceParts.length >= 3) {
+            const p1 = getBasePrice(priceParts[0]);
+            const p2 = getBasePrice(priceParts[1]);
+            const p3 = getBasePrice(priceParts[2]);
+            
+            // สมการ: ตรง + (โต๊ด * ประตู) -> 100 + (50 * 5) = 350
+            totalInputPrice = p1 + (p2 * p3);
+            
+            for (let i = 3; i < priceParts.length; i++) {
+                totalInputPrice += getBasePrice(priceParts[i]);
+            }
+        }
+
+        const formattedDetails = `${number}=${price}`;
+
+        newItems = [{
+            id: Math.random().toString(36).substr(2, 9),
+            number,
+            typeId: type,
+            typeName: selectedType.label,
+            displayValue: formattedDetails,
+            originalPrice: price,
+            price: totalInputPrice, // ยอดสุทธิหักแถมแล้ว
+            isPrimary: true,
+            receiverName: activeReceiver.name,
+            details: formattedDetails
+        }];
+    }
+
+    updateEntriesInDB([...entries, ...newItems]);
+    setNumber('');
+    setPrice('');
+    showAlert(`เพิ่มรายการให้ [${activeReceiver.name}] เรียบร้อย`, 'success');
+};
 
             const addBlockedNumberSmart = (rid, val) => {
                 if (!val) return;
