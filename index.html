@@ -64,16 +64,16 @@
             appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         } else {
             isExternalHosting = true;
-            const customFirebaseConfig = {
-                apiKey: "AIzaSyA_GjcYxRoya1GkMvMiXgDy_HlQf3PvQnE",
-                authDomain: "mynumberlotto.firebaseapp.com",
-                projectId: "mynumberlotto",
-                storageBucket: "mynumberlotto.firebasestorage.app",
-                messagingSenderId: "1024778141895",
-                appId: "1:1024778141895:web:b7d79174eac9efce29bee2",
-                measurementId: "G-LDRZ538BMQ"
-            }; 
-
+            // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyA_GjCyXRoya1GkMvMiXgDy_HI0F3PvQnE",
+  authDomain: "mynumberlotto.firebaseapp.com",
+  projectId: "mynumberlotto",
+  storageBucket: "mynumberlotto.firebasestorage.app",
+  messagingSenderId: "1024778141895",
+  appId: "1:1024778141895:web:b7d79174eac9efce29bee2",
+  measurementId: "G-LDRZ53B0MQ"
+};
             if (customFirebaseConfig) {
                 app = initializeApp(customFirebaseConfig);
                 auth = getAuth(app);
