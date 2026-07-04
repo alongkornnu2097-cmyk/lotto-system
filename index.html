@@ -57,7 +57,6 @@
         let isExternalHosting = false;
 
         if (typeof __firebase_config !== 'undefined') {
-            // ทำงานเมื่อรันในระบบ Canvas อัตโนมัติ
             const firebaseConfig = JSON.parse(__firebase_config);
             app = initializeApp(firebaseConfig);
             auth = getAuth(app);
@@ -65,9 +64,6 @@
             appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         } else {
             isExternalHosting = true;
-            // =========================================================================
-            // สำหรับการนำไปรันบนเซิร์ฟเวอร์ของคุณเอง (เช่น GitHub Pages)
-            // =========================================================================
             const customFirebaseConfig = {
                 apiKey: "AIzaSyA_GjcYxRoya1GkMvMiXgDy_HlQf3PvQnE",
                 authDomain: "mynumberlotto.firebaseapp.com",
@@ -94,7 +90,19 @@
         const App = () => {
             const [user, setUser] = useState(null);
 
-            // 1. Setup Auth (อัปเดตระบบล็อกอินใหม่)
+            // ==========================================
+            // ระบบรอบงวด (Periods)
+            // ==========================================
+            const [periods, setPeriods] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('lottoPeriodsData');
+                    if (saved) return JSON.parse(saved);
+                } catch (e) {}
+                return ['16-07-2026']; // งวดเริ่มต้น
+            });
+            const [activePeriod, setActivePeriod] = useState(periods[0] || '16-07-2026');
+
+            // 1. Setup Auth
             useEffect(() => {
                 if (!auth) return;
                 const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -128,18 +136,30 @@
                 ];
             });
 
-            // ฟังก์ชันสำหรับกำหนดโฟลเดอร์เก็บข้อมูล
+            // ==========================================
+            // กำหนด Path สำหรับ Firebase
+            // ==========================================
             const getDocRef = () => {
-                if (isExternalHosting) {
-                    // หากอยู่บน GitHub ใช้โฟลเดอร์กลาง เพื่อให้คอมฯ กับมือถือซิงค์เข้าไฟล์เดียวกัน
-                    return doc(db, 'lottoSystem', 'globalReceivers');
-                } else {
-                    if (!user) return null;
-                    return doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'receiversData');
-                }
+                if (isExternalHosting) return doc(db, 'lottoSystem', 'globalReceivers');
+                if (!user) return null;
+                return doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'receiversData');
             };
 
-            // 2. Fetch data from Firestore
+            const getPeriodsDocRef = () => {
+                if (isExternalHosting) return doc(db, 'lottoSystem', 'globalPeriods');
+                if (!user) return null;
+                return doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'periodsData');
+            };
+
+            const getEntriesDocRef = () => {
+                if (isExternalHosting) return doc(db, 'lottoSystem', `entries_${activePeriod}`);
+                if (!user) return null;
+                return doc(db, 'artifacts', appId, 'users', user.uid, 'settings', `entries_${activePeriod}`);
+            };
+
+            // ==========================================
+            // ซิงค์ข้อมูล Receivers จาก Firestore
+            // ==========================================
             useEffect(() => {
                 if (!db) return;
                 const docRef = getDocRef();
@@ -151,7 +171,6 @@
                         setReceivers(cloudData);
                         try { localStorage.setItem('lottoReceiversData', JSON.stringify(cloudData)); } catch(e){}
                     } else {
-                        // หากบนคลาวด์ยังไม่มีข้อมูล ให้ดึงข้อมูลหน้าจอขึ้นไปเซฟเก็บไว้
                         setDoc(docRef, { list: receivers }).catch(e => console.error(e));
                     }
                 }, (error) => {
@@ -159,26 +178,84 @@
                 });
 
                 return () => unsubscribe();
-            }, [user, db]); // ตรวจสอบสถานะ User และ Database
+            }, [user, db]);
 
+            // ==========================================
+            // ซิงค์ข้อมูลงวด (Periods) จาก Firestore
+            // ==========================================
+            useEffect(() => {
+                if (!db) return;
+                const docRef = getPeriodsDocRef();
+                if (!docRef) return;
+                
+                const unsubscribe = onSnapshot(docRef, (snapshot) => {
+                    if (snapshot.exists() && snapshot.data().list) {
+                        const cloudData = snapshot.data().list;
+                        setPeriods(cloudData);
+                        try { localStorage.setItem('lottoPeriodsData', JSON.stringify(cloudData)); } catch(e){}
+                        if (!cloudData.includes(activePeriod) && cloudData.length > 0) {
+                            setActivePeriod(cloudData[0]);
+                        }
+                    } else {
+                        setDoc(docRef, { list: periods }).catch(e => console.error(e));
+                    }
+                });
+                return () => unsubscribe();
+            }, [user, db]);
+
+            // ==========================================
+            // ซิงค์ข้อมูลตะกร้า (Entries) จาก Firestore
+            // ==========================================
+            const [entries, setEntries] = useState([]);
+            useEffect(() => {
+                if (!db) return;
+                const docRef = getEntriesDocRef();
+                if (!docRef) return;
+                
+                const unsubscribe = onSnapshot(docRef, (snapshot) => {
+                    if (snapshot.exists() && snapshot.data().list) {
+                        setEntries(snapshot.data().list);
+                    } else {
+                        setEntries([]); // ล้างตะกร้าถ้างวดนี้ยังไม่มีข้อมูล
+                    }
+                }, (error) => {
+                    console.error("Firestore read error (Entries):", error);
+                });
+
+                return () => unsubscribe();
+            }, [user, db, activePeriod]); // เพิ่ม activePeriod ใน dependency
+
+
+            // ==========================================
+            // ฟังก์ชันอัปเดตข้อมูลขึ้น Firestore
+            // ==========================================
             const updateReceiversInDB = async (newList) => {
                 setReceivers(newList);
                 try { localStorage.setItem('lottoReceiversData', JSON.stringify(newList)); } catch(e){}
-                
                 if (db) {
                     const docRef = getDocRef();
-                    if (docRef) {
-                        try {
-                            await setDoc(docRef, { list: newList });
-                        } catch (error) {
-                            console.error("Firestore write error:", error);
-                        }
-                    }
+                    if (docRef) await setDoc(docRef, { list: newList }).catch(e => console.error(e));
+                }
+            };
+
+            const updatePeriodsInDB = async (newList) => {
+                setPeriods(newList);
+                try { localStorage.setItem('lottoPeriodsData', JSON.stringify(newList)); } catch(e){}
+                if (db) {
+                    const docRef = getPeriodsDocRef();
+                    if (docRef) await setDoc(docRef, { list: newList }).catch(e => console.error(e));
+                }
+            };
+
+            const updateEntriesInDB = async (newList) => {
+                setEntries(newList);
+                if (db) {
+                    const docRef = getEntriesDocRef();
+                    if (docRef) await setDoc(docRef, { list: newList }).catch(e => console.error(e));
                 }
             };
 
             const [activeReceiverId, setActiveReceiverId] = useState('r1');
-            const [entries, setEntries] = useState([]);
             const [number, setNumber] = useState('');
             const [price, setPrice] = useState('');
             const [type, setType] = useState('3-direct');
@@ -227,6 +304,22 @@
             const showAlert = (msg, alertType = 'error') => {
                 setNotification({ msg, type: alertType });
                 setTimeout(() => setNotification(null), 3000);
+            };
+
+            // ฟังก์ชันเพิ่มงวดใหม่
+            const handleAddPeriod = () => {
+                const newPeriod = window.prompt("ระบุวันที่งวดใหม่ (เช่น 16-08-2026 หรือ งวดพิเศษ):");
+                if (newPeriod && newPeriod.trim() !== '') {
+                    const formatted = newPeriod.trim();
+                    if (!periods.includes(formatted)) {
+                        const newList = [formatted, ...periods]; 
+                        updatePeriodsInDB(newList);
+                        setActivePeriod(formatted);
+                        showAlert(`เพิ่มและสลับไปงวด "${formatted}" สำเร็จ`, 'success');
+                    } else {
+                        setActivePeriod(formatted);
+                    }
+                }
             };
 
             const handleAddEntry = (e) => {
@@ -302,7 +395,7 @@
                     }];
                 }
 
-                setEntries([...entries, ...newItems]);
+                updateEntriesInDB([...entries, ...newItems]);
                 setNumber('');
                 setPrice('');
                 showAlert(`เพิ่มรายการให้ [${activeReceiver.name}] เรียบร้อย`, 'success');
@@ -328,7 +421,7 @@
                     return;
                 }
                 
-                let text = `📝 สรุปรายการหวย\n================\n`;
+                let text = `📝 สรุปรายการหวย งวด ${activePeriod}\n================\n`;
                 
                 const byReceiver = {};
                 entries.forEach(e => {
@@ -374,10 +467,13 @@
                         method: 'POST',
                         mode: 'no-cors',
                         cache: 'no-cache',
-                        body: JSON.stringify({ entries: entries })
+                        body: JSON.stringify({ 
+                            entries: entries,
+                            period: activePeriod // ส่งชื่องวดไปด้วย
+                        })
                     });
                     showAlert('บันทึกข้อมูลลงชีตสำเร็จ!', 'success');
-                    setEntries([]); 
+                    updateEntriesInDB([]); // ล้างตะกร้าหลังเซฟ
                 } catch (error) {
                     showAlert('การเชื่อมต่อผิดพลาด');
                 } finally {
@@ -427,7 +523,7 @@
                         setPdfInstance(currentPdf);
                         setPdfExportData(prev => ({ ...prev, currentIndex: prev.currentIndex + 1 }));
                     } else {
-                        currentPdf.save(`Report-${new Date().getTime()}.pdf`);
+                        currentPdf.save(`Report-${activePeriod}-${new Date().getTime()}.pdf`);
                         showAlert('ดาวน์โหลด PDF สำเร็จ', 'success');
                         resetPdfExport();
                     }
@@ -492,9 +588,27 @@
                                 <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm">
                                     <Icon name="layout-dashboard" size={24} />
                                 </div>
-                                <div>
+                                <div className="flex flex-col">
                                     <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900">ระบบลงหวยอัจฉริยะ</h1>
-                                    <p className="text-xs text-slate-500 font-medium mt-0.5 tracking-wide">Professional Management System</p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-xs text-slate-500 font-medium">งวดวันที่:</span>
+                                        <div className="flex items-center bg-indigo-50 border border-indigo-100 rounded-lg overflow-hidden shadow-sm">
+                                            <select 
+                                                value={activePeriod}
+                                                onChange={(e) => setActivePeriod(e.target.value)}
+                                                className="text-sm font-bold text-indigo-700 bg-transparent px-2 py-1 outline-none cursor-pointer hover:bg-indigo-100/50 transition-colors"
+                                            >
+                                                {periods.map(p => <option key={p} value={p}>{p}</option>)}
+                                            </select>
+                                            <button 
+                                                onClick={handleAddPeriod}
+                                                className="bg-indigo-600 text-white px-3 py-1 text-xs font-bold hover:bg-indigo-700 transition-colors border-l border-indigo-600 flex items-center justify-center"
+                                                title="พิมพ์เพิ่มงวดใหม่"
+                                            >
+                                                <Icon name="plus" size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -606,7 +720,7 @@
                                             {entries.length === 0 ? (
                                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 py-10">
                                                     <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center"><Icon name="inbox" size={32} className="opacity-50" /></div>
-                                                    <p className="text-sm font-medium">ยังไม่มีรายการในตะกร้า</p>
+                                                    <p className="text-sm font-medium">ยังไม่มีรายการในตะกร้าสำหรับงวดนี้</p>
                                                 </div>
                                             ) : (
                                                 entries.map((item, i) => (
@@ -623,7 +737,7 @@
                                                         </div>
                                                         <div className="flex items-center gap-4">
                                                             <span className="font-bold text-lg text-slate-800">฿{item.price.toLocaleString()}</span>
-                                                            <button onClick={() => setEntries(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all">
+                                                            <button onClick={() => updateEntriesInDB(entries.filter(e => e.id !== item.id))} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all">
                                                                 <Icon name="trash-2" size={18} />
                                                             </button>
                                                         </div>
@@ -658,8 +772,8 @@
                                 <div className="p-6 md:p-10 flex-grow bg-slate-50/50">
                                     <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                                         <div>
-                                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">สรุปยอดรวม (Dashboard)</h2>
-                                            <p className="text-sm text-slate-500 mt-1">วิเคราะห์ตัวเลขที่มีการลงบันทึกในระบบทั้งหมด</p>
+                                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">สรุปยอดรวมงวด {activePeriod}</h2>
+                                            <p className="text-sm text-slate-500 mt-1">วิเคราะห์ตัวเลขที่มีการลงบันทึกในระบบของงวดปัจจุบัน</p>
                                         </div>
                                         <div className="bg-white px-6 py-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5">
                                             <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Icon name="trending-up" size={20} /></div>
@@ -779,7 +893,7 @@
                                 <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh] overflow-hidden border border-slate-100">
                                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white z-10">
                                         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                            <Icon name="file-text" size={20} className="text-indigo-600" /> เอกสารรายงาน (PDF Preview)
+                                            <Icon name="file-text" size={20} className="text-indigo-600" /> เอกสารรายงานงวด {activePeriod} (PDF Preview)
                                         </h2>
                                         <button onClick={() => setShowPreview(false)} className="w-10 h-10 bg-slate-50 hover:bg-slate-100 rounded-full flex items-center justify-center text-slate-500 transition-colors">
                                             <Icon name="x" size={20} />
@@ -790,7 +904,7 @@
                                         <div className="bg-white p-6 md:p-10 shadow-sm rounded-2xl mx-auto max-w-[800px] border border-slate-200">
                                             <div className="border-b border-slate-200 pb-4 mb-6 flex justify-between items-end">
                                                 <div>
-                                                    <h1 className="text-2xl font-bold text-slate-800 mb-1">รายงานสรุปยอด</h1>
+                                                    <h1 className="text-2xl font-bold text-slate-800 mb-1">รายงานสรุปยอด (งวด {activePeriod})</h1>
                                                     <p className="text-slate-500 text-xs font-medium uppercase tracking-wider">Consolidated Report</p>
                                                 </div>
                                                 <div className="text-right text-slate-400 text-xs font-medium">พิมพ์เมื่อ: {new Date().toLocaleString('th-TH')}</div>
@@ -841,7 +955,7 @@
                                 <div className="pdf-page-container">
                                     <div style={{ borderBottom: '3px solid #4338ca', paddingBottom: '10px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                                         <div>
-                                            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#4338ca', margin: '0' }}>รายงานหวยรวมจ้าว (Compact)</h1>
+                                            <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#4338ca', margin: '0' }}>รายงานหวยรวมจ้าว (งวด {activePeriod})</h1>
                                             <p style={{ color: '#64748b', fontWeight: 'bold', margin: '3px 0 0 0', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '10px' }}>Receiver Management System &bull; Professional Edition</p>
                                         </div>
                                         <div style={{ textAlign: 'right', color: '#94a3b8', fontSize: '11px', fontWeight: 'bold' }}>หน้า {pdfExportData.currentIndex + 1} / {pdfExportData.chunks.length} | {new Date().toLocaleString('th-TH')}</div>
