@@ -562,8 +562,27 @@
                                         </form>
 
                                         <div className="bg-amber-50/50 p-5 rounded-[24px] border border-amber-100/60">
-                                            <div className="flex items-center gap-2 text-amber-700 font-semibold mb-3 text-sm">
-                                                <Icon name="shield-alert" size={16} /> เลขอั้น/ปิดรับของ {activeReceiver.name}
+                                            <div className="flex items-center justify-between text-amber-700 font-semibold mb-3 text-sm">
+                                                <div className="flex items-center gap-2">
+                                                    <Icon name="shield-alert" size={16} /> เลขอั้น/ปิดรับของ {activeReceiver.name}
+                                                </div>
+                                                {activeReceiver.blockedNumbers.length > 0 && (
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if(window.confirm(`ต้องการลบเลขอั้นทั้งหมดของ ${activeReceiver.name} ใช่หรือไม่?`)) {
+                                                                const newList = receivers.map(r => 
+                                                                    r.id === activeReceiver.id ? { ...r, blockedNumbers: [] } : r
+                                                                );
+                                                                updateReceiversInDB(newList);
+                                                                showAlert(`ล้างเลขอั้นของ ${activeReceiver.name} เรียบร้อย`, 'success');
+                                                            }
+                                                        }}
+                                                        className="text-xs bg-rose-100 text-rose-600 px-3 py-1 rounded-lg hover:bg-rose-200 transition-colors flex items-center gap-1"
+                                                    >
+                                                        <Icon name="trash-2" size={14} /> ล้างทั้งหมด
+                                                    </button>
+                                                )}
                                             </div>
                                             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto custom-scrollbar">
                                                 {activeReceiver.blockedNumbers.length > 0 ? (
